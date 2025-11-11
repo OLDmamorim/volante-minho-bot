@@ -1,0 +1,986 @@
+# -*- coding: utf-8 -*-
+"""
+Bot Volante Minho 2.0 - Versão Completa com Calendário Visual e Férias com Período
+"""
+import logging
+import sqlite3
+from datetime import datetime, timedelta
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ConversationHandler,
+    filters,
+    ContextTypes,
+)
+from calendar_helper import TelegramCalendar
+from visual_calendar import create_visual_calendar, process_calendar_callback, get_day_status
+from calendar_links import generate_calendar_links, create_calendar_buttons
+
+# Configuração
+BOT_TOKEN = "8365753572:AAGiZrUoYxxfYlrRWZaIwNGkKiWQ_EzdX78"
+ADMIN_IDS = [228613920, 615966323]
+DB_PATH = "database/hugo_bot.db"
+
+# Estados do ConversationHandler
+AWAITING_SHOP_NAME = 1
+
+# Logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+
+def get_db():
+    """Conectar à base de dados"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start"""
+    user_id = update.effective_user.id
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verificar se usuário existe
+    cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (user_id,))
+    user = cursor.fetchone()
+    
+    if not user:
+        # Novo usuário
+        if user_id in ADMIN_IDS:
+            # Admin
+            cursor.execute('''
+                INSERT INTO users (telegram_id, is_admin, shop_name)
+                VALUES (?, 1, ?)
+            ''', (user_id, 'Admin'))
+            conn.commit()
+            conn.close()
+            
+            # Criar teclado simples para remover ícone de quadrado
+            keyboard = [[KeyboardButton("≡ Menu")]]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            
+            await update.message.reply_text(
+                "👋 Bem-vindo, Administrador!\n\n"
+                "Use os comandos para gerir pedidos.",
+                reply_markup=reply_markup
+            )
+        else:
+            # Loja - pedir nome
+            conn.close()
+            await update.message.reply_text(
+                "👋 Bem-vindo ao sistema de pedidos!\n\n"
+                "Por favor, indique o nome da sua loja:"
+            )
+            return AWAITING_SHOP_NAME
+    else:
+        # Usuário existente
+        conn.close()
+        
+        if user_id in ADMIN_IDS:
+            # Criar teclado simples para remover ícone de quadrado
+            keyboard = [[KeyboardButton("≡ Menu")]]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            
+            await update.message.reply_text(
+                f"👋 Bem-vindo de volta, Administrador!\n\n"
+                "O que deseja fazer?",
+                reply_markup=reply_markup
+            )
+        else:
+            # Criar teclado simples para lojas
+            keyboard = [[KeyboardButton("≡ Menu")]]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            
+            await update.message.reply_text(
+                f"👋 Bem-vindo de volta, {user['shop_name']}!\n\n"
+                "O que deseja fazer?",
+                reply_markup=reply_markup
+            )
+    
+    return ConversationHandler.END
+
+
+async def receive_shop_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receber nome da loja"""
+    shop_name = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT INTO users (telegram_id, shop_name, is_admin)
+        VALUES (?, ?, 0)
+    ''', (user_id, shop_name))
+    
+    conn.commit()
+    conn.close()
+    
+    await update.message.reply_text(f"✅ Loja '{shop_name}' registada com sucesso!")
+    await start(update, context)
+    return ConversationHandler.END
+
+
+async def pedido(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /pedido - Criar novo pedido"""
+    user_id = update.effective_user.id
+    
+    # Verificar se tem loja
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT shop_name FROM users WHERE telegram_id = ?', (user_id,))
+    user_data = cursor.fetchone()
+    conn.close()
+    
+    if not user_data or not user_data['shop_name']:
+        await update.message.reply_text("❌ Por favor, registe-se primeiro com /start")
+        return
+    
+    # Mostrar tipos de pedido
+    keyboard = [
+        [InlineKeyboardButton("🔧 Apoio", callback_data="tipo_Apoio")],
+        [InlineKeyboardButton("🏖️ Férias", callback_data="tipo_Férias")],
+        [InlineKeyboardButton("📋 Outros", callback_data="tipo_Outros")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "📝 **Novo Pedido**\n\nSelecione o tipo de pedido:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler para callbacks dos botões"""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    # Cancelar
+    if data == "cancelar":
+        await query.edit_message_text("❌ Operação cancelada.")
+        context.user_data.clear()
+        return
+    
+    # Tipo de pedido
+    if data.startswith("tipo_"):
+        tipo = data.replace("tipo_", "")
+        context.user_data['request_type'] = tipo
+        
+        # Mostrar calendário VISUAL com cores
+        if tipo == "Férias":
+            context.user_data['selecting_vacation_start'] = True
+            calendar_markup = create_visual_calendar()
+            await query.edit_message_text(
+                f"📝 Tipo: **{tipo}**\n\n"
+                f"🏖️ **Selecione a data de INÍCIO das férias:**\n\n"
+                "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
+                reply_markup=calendar_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            calendar_markup = create_visual_calendar()
+            await query.edit_message_text(
+                f"📝 Tipo: **{tipo}**\n\n"
+                f"📅 **Selecione a data:**\n\n"
+                "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
+                reply_markup=calendar_markup,
+                parse_mode='Markdown'
+            )
+        return
+    
+    # Calendário Visual no fluxo de pedidos
+    if data.startswith("cal_day_"):
+        parts = data.split('_')
+        year = int(parts[2])
+        month = int(parts[3])
+        day = int(parts[4])
+        
+        date_str = f"{year:04d}-{month:02d}-{day:02d}"
+        date_pt = f"{day:02d}/{month:02d}/{year:04d}"
+        
+        # Verificar se é férias
+        if context.user_data.get('selecting_vacation_start'):
+            # Primeira data (início)
+            context.user_data['vacation_start'] = date_str
+            context.user_data['vacation_start_pt'] = date_pt
+            context.user_data['selecting_vacation_start'] = False
+            context.user_data['selecting_vacation_end'] = True
+            
+            calendar_markup = create_visual_calendar()
+            await query.edit_message_text(
+                f"📝 Tipo: **{context.user_data['request_type']}**\n"
+                f"📅 Início: **{date_pt}**\n\n"
+                f"🏖️ **Selecione a data de FIM das férias:**\n\n"
+                "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
+                reply_markup=calendar_markup,
+                parse_mode='Markdown'
+            )
+            return
+            
+        elif context.user_data.get('selecting_vacation_end'):
+            # Segunda data (fim)
+            context.user_data['vacation_end'] = date_str
+            context.user_data['vacation_end_pt'] = date_pt
+            context.user_data['selecting_vacation_end'] = False
+            
+            # Pedir observações
+            await query.edit_message_text(
+                f"📝 Tipo: **{context.user_data['request_type']}**\n"
+                f"📅 Início: **{context.user_data['vacation_start_pt']}**\n"
+                f"📅 Fim: **{context.user_data['vacation_end_pt']}**\n\n"
+                f"📝 Observações? (ou envie \"não\" para pular)",
+                parse_mode='Markdown'
+            )
+            
+            context.user_data['awaiting_observations'] = True
+            context.user_data['is_vacation'] = True
+            return
+        
+        else:
+            # Pedido normal (não férias)
+            context.user_data['date'] = date_str
+            context.user_data['date_pt'] = date_pt
+            
+            # Mostrar períodos
+            keyboard = [
+                [InlineKeyboardButton("🌅 Manhã", callback_data="periodo_Manhã")],
+                [InlineKeyboardButton("🌆 Tarde", callback_data="periodo_Tarde")],
+                [InlineKeyboardButton("📆 Todo o dia", callback_data="periodo_Todo o dia")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                f"📝 Tipo: **{context.user_data.get('request_type')}**\n"
+                f"📅 Data: **{date_pt}**\n\n"
+                f"Selecione o período:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            return
+    
+    # Navegação do calendário visual
+    if data.startswith("cal_prev_") or data.startswith("cal_next_"):
+        result = process_calendar_callback(data)
+        _, year, month = result
+        calendar_markup = create_visual_calendar(year, month)
+        
+        # Manter mensagem apropriada
+        if context.user_data.get('selecting_vacation_start'):
+            msg = (f"📝 Tipo: **{context.user_data['request_type']}**\n\n"
+                   f"🏖️ **Selecione a data de INÍCIO das férias:**\n\n"
+                   "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente")
+        elif context.user_data.get('selecting_vacation_end'):
+            msg = (f"📝 Tipo: **{context.user_data['request_type']}**\n"
+                   f"📅 Início: **{context.user_data['vacation_start_pt']}**\n\n"
+                   f"🏖️ **Selecione a data de FIM das férias:**\n\n"
+                   "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente")
+        elif context.user_data.get('request_type'):
+            msg = (f"📝 Tipo: **{context.user_data.get('request_type')}**\n\n"
+                   f"📅 **Selecione a data:**\n\n"
+                   "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente")
+        else:
+            # Navegação no comando /calendario (sem pedido ativo)
+            month_names = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                           'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+            msg = (f"📅 **Calendário de Pedidos - {month_names[month]} {year}**\n\n"
+                   f"🟢 Disponível | 🔴 Ocupado todo o dia\n"
+                   f"🟣 Manhã ocupada | 🔵 Tarde ocupada | 🟡 Pendente")
+        
+        await query.edit_message_text(
+            msg,
+            reply_markup=calendar_markup,
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Fechar calendário
+    if data == "cal_close":
+        await query.edit_message_text("✅ Calendário fechado.")
+        context.user_data.clear()
+        return
+    
+    # Período
+    if data.startswith("periodo_"):
+        periodo = data.replace("periodo_", "")
+        context.user_data['period'] = periodo
+        
+        # Pedir observações
+        await query.edit_message_text(
+            f"📝 Tipo: **{context.user_data.get('request_type')}**\n"
+            f"📅 Data: **{context.user_data.get('date_pt')}**\n"
+            f"🕐 Período: **{periodo}**\n\n"
+            f"📝 Observações? (ou envie \"não\" para pular)",
+            parse_mode='Markdown'
+        )
+        
+        context.user_data['awaiting_observations'] = True
+        return
+    
+    # Aprovar pedido
+    if data.startswith("aprovar_"):
+        request_id = int(data.replace("aprovar_", ""))
+        admin_id = query.from_user.id
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Atualizar pedido
+        cursor.execute('''
+            UPDATE requests 
+            SET status = 'Aprovado', processed_at = ?, processed_by = ?
+            WHERE id = ?
+        ''', (datetime.now(), admin_id, request_id))
+        
+        # Buscar info do pedido
+        cursor.execute('''
+            SELECT r.*, u.shop_name 
+            FROM requests r
+            JOIN users u ON r.shop_telegram_id = u.telegram_id
+            WHERE r.id = ?
+        ''', (request_id,))
+        req = cursor.fetchone()
+        
+        conn.commit()
+        conn.close()
+        
+        # Gerar links de calendário
+        try:
+            observations = req['observations'] if req['observations'] else ''
+        except (KeyError, IndexError):
+            observations = ''
+        
+        request_data = {
+            'shop_name': req['shop_name'],
+            'request_type': req['request_type'],
+            'start_date': req['start_date'],
+            'period': req['period'],
+            'observations': observations
+        }
+        
+        google_url, ics_content = generate_calendar_links(request_data)
+        calendar_buttons = create_calendar_buttons(google_url)
+        
+        # Notificar loja
+        try:
+            await context.bot.send_message(
+                chat_id=req['shop_telegram_id'],
+                text=f"✅ **Pedido Aprovado!**\n\n"
+                     f"📝 Tipo: {req['request_type']}\n"
+                     f"📅 Data: {req['start_date']}\n"
+                     f"🕐 Período: {req['period']}",
+                parse_mode='Markdown'
+            )
+        except:
+            pass
+        
+        await query.edit_message_text(
+            f"✅ **Pedido #{request_id} Aprovado!**\n\n"
+            f"🏬 Loja: {req['shop_name']}\n"
+            f"📝 Tipo: {req['request_type']}\n"
+            f"📅 Data: {req['start_date']}\n"
+            f"🕐 Período: {req['period']}\n\n"
+            f"📅 **Adicionar ao Calendário:**",
+            reply_markup=calendar_buttons,
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Rejeitar pedido
+    if data.startswith("rejeitar_"):
+        request_id = int(data.replace("rejeitar_", ""))
+        context.user_data['rejecting_request_id'] = request_id
+        
+        await query.edit_message_text(
+            "❌ **Rejeitar Pedido**\n\n"
+            "Por favor, envie o motivo da rejeição:"
+        )
+        context.user_data['awaiting_rejection_reason'] = True
+        return
+
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler para mensagens de texto"""
+    text = update.message.text.strip()
+    
+    # Observações
+    if context.user_data.get('awaiting_observations'):
+        context.user_data['awaiting_observations'] = False
+        
+        if text.lower() != "não":
+            context.user_data['observations'] = text
+        else:
+            context.user_data['observations'] = ""
+        
+        # Verificar se é férias
+        if context.user_data.get('is_vacation'):
+            # Criar pedidos para cada dia do período
+            start_date = datetime.strptime(context.user_data['vacation_start'], '%Y-%m-%d')
+            end_date = datetime.strptime(context.user_data['vacation_end'], '%Y-%m-%d')
+            
+            user_id = update.effective_user.id
+            request_type = context.user_data['request_type']
+            observations = context.user_data.get('observations', '')
+            
+            conn = get_db()
+            cursor = conn.cursor()
+            
+            # Criar um pedido para cada dia
+            current_date = start_date
+            created_count = 0
+            
+            while current_date <= end_date:
+                date_str = current_date.strftime('%Y-%m-%d')
+                
+                cursor.execute('''
+                    INSERT INTO requests (shop_telegram_id, request_type, start_date, period, observations, status)
+                    VALUES (?, ?, ?, ?, ?, 'Pendente')
+                ''', (user_id, request_type, date_str, 'Todo o dia', observations))
+                
+                created_count += 1
+                current_date += timedelta(days=1)
+            
+            conn.commit()
+            conn.close()
+            
+            # Notificar admins
+            for admin_id in ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=f"🔔 **Novos Pedidos de Férias!**\n\n"
+                             f"📝 Tipo: {request_type}\n"
+                             f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
+                             f"📊 Total: {created_count} dias",
+                        parse_mode='Markdown'
+                    )
+                except:
+                    pass
+            
+            await update.message.reply_text(
+                f"✅ **Pedido de Férias Criado!**\n\n"
+                f"📝 Tipo: {request_type}\n"
+                f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
+                f"📊 Total: {created_count} dias\n\n"
+                f"Aguarde aprovação dos gestores.",
+                parse_mode='Markdown'
+            )
+            
+            context.user_data.clear()
+            return
+        
+        # Pedido normal
+        user_id = update.effective_user.id
+        request_type = context.user_data['request_type']
+        date = context.user_data['date']
+        period = context.user_data['period']
+        observations = context.user_data.get('observations', '')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO requests (shop_telegram_id, request_type, start_date, period, observations, status)
+            VALUES (?, ?, ?, ?, ?, 'Pendente')
+        ''', (user_id, request_type, date, period, observations))
+        
+        request_id = cursor.lastrowid
+        
+        # Buscar nome da loja
+        cursor.execute('SELECT shop_name FROM users WHERE telegram_id = ?', (user_id,))
+        user_data = cursor.fetchone()
+        shop_name = user_data['shop_name']
+        
+        conn.commit()
+        conn.close()
+        
+        # Notificar admins
+        for admin_id in ADMIN_IDS:
+            keyboard = [
+                [InlineKeyboardButton("✅ Aprovar", callback_data=f"aprovar_{request_id}")],
+                [InlineKeyboardButton("❌ Rejeitar", callback_data=f"rejeitar_{request_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"🔔 **Novo Pedido #{request_id}**\n\n"
+                         f"🏬 Loja: {shop_name}\n"
+                         f"📝 Tipo: {request_type}\n"
+                         f"📅 Data: {context.user_data['date_pt']}\n"
+                         f"🕐 Período: {period}",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+            except:
+                pass
+        
+        await update.message.reply_text(
+            f"✅ **Pedido Criado!**\n\n"
+            f"📝 Tipo: {request_type}\n"
+            f"📅 Data: {context.user_data['date_pt']}\n"
+            f"🕐 Período: {period}\n\n"
+            f"Aguarde aprovação dos gestores.",
+            parse_mode='Markdown'
+        )
+        
+        context.user_data.clear()
+        return
+    
+    # Motivo de rejeição
+    if context.user_data.get('awaiting_rejection_reason'):
+        context.user_data['awaiting_rejection_reason'] = False
+        request_id = context.user_data['rejecting_request_id']
+        reason = text
+        admin_id = update.effective_user.id
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE requests 
+            SET status = 'Rejeitado', rejection_reason = ?, processed_at = ?, processed_by = ?
+            WHERE id = ?
+        ''', (reason, datetime.now(), admin_id, request_id))
+        
+        # Buscar info do pedido
+        cursor.execute('''
+            SELECT r.*, u.shop_name 
+            FROM requests r
+            JOIN users u ON r.shop_telegram_id = u.telegram_id
+            WHERE r.id = ?
+        ''', (request_id,))
+        req = cursor.fetchone()
+        
+        conn.commit()
+        conn.close()
+        
+        # Notificar loja
+        try:
+            await context.bot.send_message(
+                chat_id=req['shop_telegram_id'],
+                text=f"❌ **Pedido Rejeitado**\n\n"
+                     f"📝 Tipo: {req['request_type']}\n"
+                     f"📅 Data: {req['start_date']}\n"
+                     f"🕐 Período: {req['period']}\n\n"
+                     f"**Motivo:** {reason}",
+                parse_mode='Markdown'
+            )
+        except:
+            pass
+        
+        await update.message.reply_text(
+            f"✅ **Pedido #{request_id} Rejeitado**\n\n"
+            f"🏬 Loja: {req['shop_name']}\n"
+            f"📝 Tipo: {req['request_type']}\n"
+            f"📅 Data: {req['start_date']}\n"
+            f"🕐 Período: {req['period']}\n\n"
+            f"**Motivo:** {reason}",
+            parse_mode='Markdown'
+        )
+        
+        context.user_data.clear()
+        return
+
+
+async def calendario_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /calendario - Mostrar calendário visual"""
+    year = datetime.now().year
+    month = datetime.now().month
+    
+    # Criar calendário visual
+    calendar_markup = create_visual_calendar(year, month)
+    
+    month_names = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+    
+    await update.message.reply_text(
+        f"📅 **Calendário de Pedidos - {month_names[month]} {year}**\n\n"
+        f"🟢 Disponível | 🔴 Ocupado todo o dia\n"
+        f"🟣 Manhã ocupada | 🔵 Tarde ocupada | 🟡 Pendente",
+        reply_markup=calendar_markup,
+        parse_mode='Markdown'
+    )
+
+
+async def meus_pedidos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /meus_pedidos - Ver pedidos da loja"""
+    user_id = update.effective_user.id
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT * FROM requests WHERE shop_telegram_id = ?
+        ORDER BY start_date DESC LIMIT 10
+    ''', (user_id,))
+    
+    requests = cursor.fetchall()
+    conn.close()
+    
+    if not requests:
+        await update.message.reply_text("📄 Você ainda não tem pedidos.")
+        return
+    
+    text = "📋 **Meus Pedidos**\n\n"
+    
+    for req in requests:
+        status_emoji = "⏳" if req['status'] == 'pending' else ("✅" if req['status'] == 'approved' else "❌")
+        status_text = "Pendente" if req['status'] == 'pending' else ("Aprovado" if req['status'] == 'approved' else "Rejeitado")
+        
+        text += f"{status_emoji} **Pedido #{req['id']}**\n"
+        text += f"📝 Tipo: {req['request_type']}\n"
+        text += f"📅 Data: {req['start_date']}\n"
+        text += f"🕐 Período: {req['period']}\n"
+        text += f"🚦 Status: {status_text}\n\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+
+async def minha_loja_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /minha_loja - Ver informações da loja"""
+    user_id = update.effective_user.id
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (user_id,))
+    user = cursor.fetchone()
+    
+    if not user:
+        await update.message.reply_text("❌ Utilizador não encontrado.")
+        conn.close()
+        return
+    
+    # Contar pedidos
+    cursor.execute('SELECT COUNT(*) as total FROM requests WHERE shop_telegram_id = ?', (user_id,))
+    total = cursor.fetchone()['total']
+    
+    cursor.execute('SELECT COUNT(*) as pending FROM requests WHERE shop_telegram_id = ? AND status = "Pendente"', (user_id,))
+    pending = cursor.fetchone()['pending']
+    
+    cursor.execute('SELECT COUNT(*) as approved FROM requests WHERE shop_telegram_id = ? AND status = "Aprovado"', (user_id,))
+    approved = cursor.fetchone()['approved']
+    
+    conn.close()
+    
+    text = f"🏬 **Informações da Loja**\n\n"
+    text += f"🏷️ Nome: {user['shop_name']}\n"
+    text += f"🆔 ID: {user_id}\n\n"
+    text += f"📊 **Estatísticas:**\n"
+    text += f"📄 Total de pedidos: {total}\n"
+    text += f"⏳ Pendentes: {pending}\n"
+    text += f"✅ Aprovados: {approved}\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+
+async def pendentes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /pendentes - Ver pedidos pendentes (admin)"""
+    user_id = update.effective_user.id
+    
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ Você não tem permissão para usar este comando.")
+        return
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT r.*, u.shop_name 
+        FROM requests r
+        JOIN users u ON r.shop_telegram_id = u.telegram_id
+        WHERE r.status = 'Pendente'
+        ORDER BY r.created_at ASC
+    ''')
+    
+    requests = cursor.fetchall()
+    conn.close()
+    
+    if not requests:
+        await update.message.reply_text("✅ Não há pedidos pendentes!")
+        return
+    
+    for req in requests:
+        try:
+            observations = req['observations'] if req['observations'] else 'Sem observações'
+        except (KeyError, IndexError):
+            observations = 'Sem observações'
+        
+        text = (
+            f"⏳ **Pedido #{req['id']} - Pendente**\n\n"
+            f"🏬 Loja: {req['shop_name']}\n"
+            f"📝 Tipo: {req['request_type']}\n"
+            f"📅 Data: {req['start_date']}\n"
+            f"🕐 Período: {req['period']}\n"
+            f"📝 Observações: {observations}"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ Aprovar", callback_data=f"aprovar_{req['id']}")],
+            [InlineKeyboardButton("❌ Rejeitar", callback_data=f"rejeitar_{req['id']}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
+
+async def estatisticas_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /estatisticas - Ver estatísticas (admin)"""
+    user_id = update.effective_user.id
+    
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ Você não tem permissão para usar este comando.")
+        return
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Total de pedidos
+    cursor.execute('SELECT COUNT(*) as total FROM requests')
+    total = cursor.fetchone()['total']
+    
+    # Por status
+    cursor.execute('SELECT COUNT(*) as count FROM requests WHERE status = "Pendente"')
+    pendentes = cursor.fetchone()['count']
+    
+    cursor.execute('SELECT COUNT(*) as count FROM requests WHERE status = "Aprovado"')
+    aprovados = cursor.fetchone()['count']
+    
+    cursor.execute('SELECT COUNT(*) as count FROM requests WHERE status = "Rejeitado"')
+    rejeitados = cursor.fetchone()['count']
+    
+    # Por tipo
+    cursor.execute('SELECT request_type, COUNT(*) as count FROM requests GROUP BY request_type')
+    tipos = cursor.fetchall()
+    
+    # Por período
+    cursor.execute('SELECT period, COUNT(*) as count FROM requests GROUP BY period')
+    periodos = cursor.fetchall()
+    
+    # Por loja (top 5)
+    cursor.execute('''
+        SELECT u.shop_name, COUNT(*) as count 
+        FROM requests r
+        JOIN users u ON r.shop_telegram_id = u.telegram_id
+        GROUP BY u.shop_name
+        ORDER BY count DESC
+        LIMIT 5
+    ''')
+    lojas = cursor.fetchall()
+    
+    conn.close()
+    
+    text = "📊 **Estatísticas do Sistema**\n\n"
+    text += f"📄 **Total de Pedidos:** {total}\n\n"
+    
+    text += "🚦 **Por Status:**\n"
+    text += f"⏳ Pendentes: {pendentes}\n"
+    text += f"✅ Aprovados: {aprovados}\n"
+    text += f"❌ Rejeitados: {rejeitados}\n\n"
+    
+    text += "📝 **Por Tipo:**\n"
+    for tipo in tipos:
+        text += f"• {tipo['request_type']}: {tipo['count']}\n"
+    text += "\n"
+    
+    text += "🕐 **Por Período:**\n"
+    for periodo in periodos:
+        text += f"• {periodo['period']}: {periodo['count']}\n"
+    text += "\n"
+    
+    text += "🏬 **Top 5 Lojas:**\n"
+    for loja in lojas:
+        text += f"• {loja['shop_name']}: {loja['count']} pedidos\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+
+async def agenda_semana_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /agenda_semana - Ver agenda da semana (admin)"""
+    user_id = update.effective_user.id
+    
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("❌ Você não tem permissão para usar este comando.")
+        return
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Próximos 7 dias
+    today = datetime.now().date()
+    dates = [(today + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
+    
+    text = "📅 **Agenda da Semana**\n\n"
+    
+    for date_str in dates:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        date_pt = date_obj.strftime('%d/%m/%Y')
+        weekday = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][date_obj.weekday()]
+        
+        cursor.execute('''
+            SELECT r.*, u.shop_name 
+            FROM requests r
+            JOIN users u ON r.shop_telegram_id = u.telegram_id
+            WHERE r.start_date = ? AND r.status = 'Aprovado'
+            ORDER BY r.period
+        ''', (date_str,))
+        
+        requests = cursor.fetchall()
+        
+        text += f"**{weekday}, {date_pt}**\n"
+        
+        if requests:
+            for req in requests:
+                period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
+                text += f"{period_emoji} {req['shop_name']} - {req['request_type']} ({req['period']})\n"
+        else:
+            text += "🟢 Sem pedidos aprovados\n"
+        
+        text += "\n"
+    
+    conn.close()
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /menu - Voltar ao menu principal"""
+    user_id = update.effective_user.id
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        await update.message.reply_text(
+            "👋 Bem-vindo! Use /start para se registar."
+        )
+        return
+    
+    if user_id in ADMIN_IDS:
+        text = (
+            f"👨‍💼 **Menu Administrador**\n\n"
+            f"🏷️ Nome: {user['shop_name']}\n\n"
+            f"**Comandos disponíveis:**\n"
+            f"• /pedido - Criar novo pedido\n"
+            f"• /calendario - Ver calendário\n"
+            f"• /meus_pedidos - Ver meus pedidos\n"
+            f"• /minha_loja - Informações da loja\n\n"
+            f"🔑 **Comandos Admin:**\n"
+            f"• /pendentes - Ver pedidos pendentes\n"
+            f"• /agenda_semana - Ver agenda da semana\n"
+            f"• /estatisticas - Ver estatísticas\n"
+        )
+    else:
+        text = (
+            f"🏬 **Menu Principal**\n\n"
+            f"🏷️ Loja: {user['shop_name']}\n\n"
+            f"**Comandos disponíveis:**\n"
+            f"• /pedido - Criar novo pedido\n"
+            f"• /calendario - Ver calendário\n"
+            f"• /meus_pedidos - Ver meus pedidos\n"
+            f"• /minha_loja - Informações da loja\n"
+        )
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /help - Mostrar ajuda"""
+    text = (
+        "🔍 **Ajuda - Volante Minho 2.0**\n\n"
+        "📝 **Como criar um pedido:**\n"
+        "1. Use /pedido\n"
+        "2. Escolha o tipo (Apoio, Férias, Outros)\n"
+        "3. Selecione a data no calendário\n"
+        "4. Escolha o período (Manhã, Tarde, Todo o dia)\n"
+        "5. Adicione observações (opcional)\n\n"
+        "📅 **Calendário:**\n"
+        "🟢 Verde = Disponível\n"
+        "🔴 Vermelho = Ocupado todo o dia\n"
+        "🟣 Roxo = Manhã ocupada\n"
+        "🔵 Azul = Tarde ocupada\n"
+        "🟡 Amarelo = Pedido pendente\n\n"
+        "🏖️ **Férias:**\n"
+        "Para pedidos de férias, selecione a data de início e fim.\n"
+        "O sistema criará automaticamente um pedido para cada dia.\n\n"
+        "❓ **Dúvidas?**\n"
+        "Entre em contacto com o gestor."
+    )
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def setup_bot_commands(app: Application):
+    """Configurar comandos do bot"""
+    commands = [
+        BotCommand("start", "Iniciar o bot"),
+        BotCommand("pedido", "Criar novo pedido"),
+        BotCommand("calendario", "Ver calendário de pedidos"),
+        BotCommand("meus_pedidos", "Ver meus pedidos"),
+        BotCommand("minha_loja", "Ver informações da minha loja"),
+        BotCommand("pendentes", "Ver pedidos pendentes (admin)"),
+        BotCommand("agenda_semana", "Ver agenda da semana (admin)"),
+        BotCommand("estatisticas", "Ver estatísticas (admin)"),
+        BotCommand("menu", "Voltar ao menu principal"),
+        BotCommand("help", "Mostrar ajuda"),
+    ]
+    
+    await app.bot.set_my_commands(commands)
+    logger.info("✅ Comandos configurados no menu do Telegram")
+
+
+def main():
+    """Iniciar o bot"""
+    logger.info("🤖 Bot Volante Minho 2.0 V2 iniciado!")
+    
+    app = Application.builder().token(BOT_TOKEN).post_init(setup_bot_commands).build()
+    
+    # ConversationHandler para registo
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            AWAITING_SHOP_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_shop_name)]
+        },
+        fallbacks=[CommandHandler('start', start)]
+    )
+    
+    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler('pedido', pedido))
+    app.add_handler(CommandHandler('calendario', calendario_command))
+    app.add_handler(CommandHandler('meus_pedidos', meus_pedidos_command))
+    app.add_handler(CommandHandler('minha_loja', minha_loja_command))
+    app.add_handler(CommandHandler('pendentes', pendentes_command))
+    app.add_handler(CommandHandler('estatisticas', estatisticas_command))
+    app.add_handler(CommandHandler('agenda_semana', agenda_semana_command))
+    app.add_handler(CommandHandler('menu', menu_command))
+    app.add_handler(CommandHandler('help', help_command))
+    app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+    
+    # Iniciar polling
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == '__main__':
+    main()
