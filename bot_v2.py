@@ -18,15 +18,70 @@ from telegram.ext import (
 from calendar_helper import TelegramCalendar
 from visual_calendar import create_visual_calendar, process_calendar_callback, get_day_status
 from calendar_links import generate_calendar_links, create_calendar_buttons
-from database.db_manager import DatabaseManager
+import os
 
 # Configuração
 BOT_TOKEN = "8365753572:AAGiZrUoYxxfYlrRWZaIwNGkKiWQ_EzdX78"
 ADMIN_IDS = [228613920, 615966323]
 DB_PATH = "database/hugo_bot.db"
 
-# Inicializar Database Manager (cria tabelas automaticamente)
-db_manager = DatabaseManager(DB_PATH)
+# Criar diretório da base de dados se não existir
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+# Função para inicializar a base de dados
+def init_database():
+    """Inicializa as tabelas da base de dados"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Tabela de utilizadores
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            telegram_id INTEGER PRIMARY KEY,
+            username TEXT,
+            is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+            shop_name TEXT,
+            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Tabela de pedidos
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shop_telegram_id INTEGER NOT NULL,
+            request_type TEXT NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE,
+            period TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Pendente',
+            rejection_reason TEXT,
+            observations TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            processed_at TIMESTAMP,
+            processed_by INTEGER,
+            FOREIGN KEY (shop_telegram_id) REFERENCES users (telegram_id),
+            FOREIGN KEY (processed_by) REFERENCES users (telegram_id)
+        )
+    ''')
+    
+    # Tabela de notificações
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id INTEGER,
+            recipient_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (request_id) REFERENCES requests (id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+# Inicializar base de dados
+init_database()
 
 # Estados do ConversationHandler
 AWAITING_SHOP_NAME = 1
