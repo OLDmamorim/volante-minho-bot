@@ -475,6 +475,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para mensagens de texto"""
     text = update.message.text.strip()
     
+    # Botão Menu
+    if text == "≡ Menu" or text.lower() == "menu":
+        await menu_command(update, context)
+        return
+    
     # Observações
     if context.user_data.get('awaiting_observations'):
         context.user_data['awaiting_observations'] = False
