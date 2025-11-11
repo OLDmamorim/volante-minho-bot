@@ -160,12 +160,6 @@ def create_visual_calendar(year=None, month=None):
     
     keyboard.append(navigation)
     
-    # Legenda
-    keyboard.append([InlineKeyboardButton(
-        "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
-        callback_data="cal_ignore"
-    )])
-    
     # Fechar
     keyboard.append([InlineKeyboardButton("❌ Fechar", callback_data="cal_close")])
     
