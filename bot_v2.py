@@ -123,14 +123,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit()
             conn.close()
             
-            # Criar teclado simples para remover ícone de quadrado
-            keyboard = [[KeyboardButton("≡ Menu")]]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            
             await update.message.reply_text(
                 "👋 Bem-vindo, Administrador!\n\n"
                 "Use os comandos para gerir pedidos.",
-                reply_markup=reply_markup
+                reply_markup=ReplyKeyboardRemove()
             )
         else:
             # Loja - pedir nome
@@ -145,24 +141,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if user_id in ADMIN_IDS:
-            # Criar teclado simples para remover ícone de quadrado
-            keyboard = [[KeyboardButton("≡ Menu")]]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            
             await update.message.reply_text(
                 f"👋 Bem-vindo de volta, Administrador!\n\n"
                 "O que deseja fazer?",
-                reply_markup=reply_markup
+                reply_markup=ReplyKeyboardRemove()
             )
         else:
-            # Criar teclado simples para lojas
-            keyboard = [[KeyboardButton("≡ Menu")]]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            
             await update.message.reply_text(
                 f"👋 Bem-vindo de volta, {user['shop_name']}!\n\n"
                 "O que deseja fazer?",
-                reply_markup=reply_markup
+                reply_markup=ReplyKeyboardRemove()
             )
     
     return ConversationHandler.END
