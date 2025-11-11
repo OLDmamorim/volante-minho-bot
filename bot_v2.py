@@ -940,16 +940,11 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in ADMIN_IDS:
         text = (
             f"👨‍💼 **Menu Administrador**\n\n"
-            f"🏷️ Nome: {user['shop_name']}\n\n"
             f"**Comandos disponíveis:**\n"
-            f"• /pedido - Criar novo pedido\n"
-            f"• /calendario - Ver calendário\n"
-            f"• /meus_pedidos - Ver meus pedidos\n"
-            f"• /minha_loja - Informações da loja\n\n"
-            f"🔑 **Comandos Admin:**\n"
             f"• /pendentes - Ver pedidos pendentes\n"
             f"• /agenda_semana - Ver agenda da semana\n"
             f"• /estatisticas - Ver estatísticas\n"
+            f"• /calendario - Ver calendário\n"
         )
     else:
         text = (
