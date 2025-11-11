@@ -18,11 +18,15 @@ from telegram.ext import (
 from calendar_helper import TelegramCalendar
 from visual_calendar import create_visual_calendar, process_calendar_callback, get_day_status
 from calendar_links import generate_calendar_links, create_calendar_buttons
+from database.db_manager import DatabaseManager
 
 # Configuração
 BOT_TOKEN = "8365753572:AAGiZrUoYxxfYlrRWZaIwNGkKiWQ_EzdX78"
 ADMIN_IDS = [228613920, 615966323]
 DB_PATH = "database/hugo_bot.db"
+
+# Inicializar Database Manager (cria tabelas automaticamente)
+db_manager = DatabaseManager(DB_PATH)
 
 # Estados do ConversationHandler
 AWAITING_SHOP_NAME = 1
