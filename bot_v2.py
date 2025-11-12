@@ -28,6 +28,7 @@ from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
 from init_admin import ensure_hugo_admin
 from delete_user import apagar_user_command
+from temp_state import save_temp_state, get_temp_state, clear_temp_state, update_temp_state
 from error_handler import error_handler
 from health_check import start_health_check_server, update_bot_status
 from auto_restart import setup_auto_restart
@@ -93,21 +94,29 @@ def init_database():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS blocked_dates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            start_date DATE NOT NULL,
-            end_date DATE NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
             period TEXT NOT NULL,
             reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            blocked_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(start_date, end_date, period)
+        )
+    ''')
+    
+    # Tabela para estados temporários (substituir context.user_data)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS temp_states (
+            user_id INTEGER PRIMARY KEY,
+            state_data TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
     conn.commit()
     conn.close()
-
-# Inicializar base de dados
-init_database()
-
-# Garantir que Hugo é admin
+    
+    # Garantir que Hugo é admin
 ensure_hugo_admin()
 
 # Estados do ConversationHandler
@@ -514,19 +523,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         periodo = data.replace("block_period_", "")
         admin_id = query.from_user.id
         
-        # Pedir motivo do bloqueio
-        context.user_data['block_period'] = periodo
+        # Pedir motivo do bloqueio - GUARDAR NA BD
+        state = get_temp_state(admin_id)
+        state['block_period'] = periodo
+        state['awaiting_block_reason'] = True
+        save_temp_state(admin_id, state)
+        
+        logger.info(f"📦 DEBUG: Estado guardado na BD: {state}")
         
         await query.edit_message_text(
             f"🚫 **Bloquear Período**\n\n"
-            f"📅 De: **{context.user_data['block_start_date_pt']}**\n"
-            f"📅 Até: **{context.user_data['block_end_date_pt']}**\n"
+            f"📅 De: **{state['block_start_date_pt']}**\n"
+            f"📅 Até: **{state['block_end_date_pt']}**\n"
             f"🕐 Período: **{periodo}**\n\n"
             f"📝 Por favor, envie o motivo do bloqueio (ou \"não\" para pular):",
             parse_mode='Markdown'
         )
-        
-        context.user_data['awaiting_block_reason'] = True
         return
     
     # Período
@@ -866,13 +878,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await menu_command(update, context)
         return
     
-    # Motivo de bloqueio
-    if context.user_data.get('awaiting_block_reason'):
+    # Motivo de bloqueio - LER DA BD
+    admin_id = update.effective_user.id
+    state = get_temp_state(admin_id)
+    
+    logger.info(f"📦 DEBUG message_handler: Estado lido da BD: {state}")
+    
+    if state.get('awaiting_block_reason'):
         logger.info(f"🔍 DEBUG: Recebido motivo de bloqueio: '{text}'")
-        logger.info(f"🔍 DEBUG: context.user_data antes de processar: {dict(context.user_data)}")
-        
-        context.user_data['awaiting_block_reason'] = False
-        admin_id = update.effective_user.id
         
         reason = text if text.lower() != "não" else None
         logger.info(f"🔍 DEBUG: Motivo processado: '{reason}'")
@@ -880,8 +893,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Calcular todos os dias do período
         from datetime import datetime, timedelta
         
-        start_date = datetime.strptime(context.user_data['block_start_date'], '%Y-%m-%d')
-        end_date = datetime.strptime(context.user_data['block_end_date'], '%Y-%m-%d')
+        start_date = datetime.strptime(state['block_start_date'], '%Y-%m-%d')
+        end_date = datetime.strptime(state['block_end_date'], '%Y-%m-%d')
         
         conn = get_db()
         cursor = conn.cursor()
@@ -900,7 +913,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ''', (
                     date_str,
                     date_str,  # Para bloqueio dia a dia, start_date = end_date
-                    context.user_data['block_period'],
+                    state['block_period'],
                     reason,
                     admin_id
                 ))
@@ -919,9 +932,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_days = (end_date - start_date).days + 1
         
         msg = f"✅ **Período Bloqueado!**\n\n"
-        msg += f"📅 De: {context.user_data['block_start_date_pt']}\n"
-        msg += f"📅 Até: {context.user_data['block_end_date_pt']}\n"
-        msg += f"🕐 Período: {context.user_data['block_period']}\n"
+        msg += f"📅 De: {state['block_start_date_pt']}\n"
+        msg += f"📅 Até: {state['block_end_date_pt']}\n"
+        msg += f"🕐 Período: {state['block_period']}\n"
         msg += f"📝 Motivo: {reason or 'N/A'}\n\n"
         msg += f"📊 Total de dias: {total_days}\n"
         msg += f"✅ Bloqueados: {blocked_count}\n"
@@ -931,7 +944,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(msg, parse_mode='Markdown')
         
-        context.user_data.clear()
+        # Limpar estado da BD
+        clear_temp_state(admin_id)
         return
     
     # Observações
