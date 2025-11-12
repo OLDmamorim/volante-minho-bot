@@ -26,7 +26,7 @@ def get_day_status(year, month, day):
     # Verificar bloqueios primeiro
     cursor.execute('''
         SELECT period FROM blocked_dates
-        WHERE date = ?
+        WHERE ? BETWEEN start_date AND end_date
     ''', (date_str,))
     bloqueios = cursor.fetchall()
     

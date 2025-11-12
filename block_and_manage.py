@@ -56,10 +56,10 @@ async def desbloquear_dia_command(update: Update, context: ContextTypes.DEFAULT_
     
     # Buscar bloqueios ativos
     cursor.execute('''
-        SELECT id, date, period, reason
+        SELECT id, start_date, end_date, period, reason
         FROM blocked_dates
-        WHERE date >= date('now')
-        ORDER BY date ASC
+        WHERE end_date >= date('now')
+        ORDER BY start_date ASC
     ''')
     
     bloqueios = cursor.fetchall()
@@ -75,8 +75,13 @@ async def desbloquear_dia_command(update: Update, context: ContextTypes.DEFAULT_
     
     keyboard = []
     for bloqueio in bloqueios:
-        date_obj = datetime.strptime(bloqueio['date'], '%Y-%m-%d')
-        date_pt = date_obj.strftime('%d/%m/%Y')
+        start_date_obj = datetime.strptime(bloqueio['start_date'], '%Y-%m-%d')
+        end_date_obj = datetime.strptime(bloqueio['end_date'], '%Y-%m-%d')
+        
+        if bloqueio['start_date'] == bloqueio['end_date']:
+            date_pt = start_date_obj.strftime('%d/%m/%Y')
+        else:
+            date_pt = f"{start_date_obj.strftime('%d/%m/%Y')} - {end_date_obj.strftime('%d/%m/%Y')}"
         
         periodo_emoji = "🌅" if bloqueio['period'] == "Manhã" else ("🌆" if bloqueio['period'] == "Tarde" else "📆")
         
