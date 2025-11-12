@@ -859,6 +859,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para mensagens de texto"""
     text = update.message.text.strip()
+    logger.info(f"💬 DEBUG message_handler: Recebida mensagem '{text}', context.user_data={dict(context.user_data)}")
     
     # Botão Menu
     if text == "≡ Menu" or text.lower() == "menu":
@@ -867,10 +868,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Motivo de bloqueio
     if context.user_data.get('awaiting_block_reason'):
+        logger.info(f"🔍 DEBUG: Recebido motivo de bloqueio: '{text}'")
+        logger.info(f"🔍 DEBUG: context.user_data antes de processar: {dict(context.user_data)}")
+        
         context.user_data['awaiting_block_reason'] = False
         admin_id = update.effective_user.id
         
         reason = text if text.lower() != "não" else None
+        logger.info(f"🔍 DEBUG: Motivo processado: '{reason}'")
         
         # Calcular todos os dias do período
         from datetime import datetime, timedelta
@@ -907,6 +912,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         conn.commit()
         conn.close()
+        
+        logger.info(f"✅ DEBUG: Bloqueios gravados! Total: {blocked_count}, Já bloqueados: {already_blocked}")
         
         # Mensagem de confirmação
         total_days = (end_date - start_date).days + 1
