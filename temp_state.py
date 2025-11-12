@@ -4,7 +4,16 @@ Substitui context.user_data para garantir persistência entre updates
 """
 import json
 import sqlite3
-from database import get_db
+import os
+
+# Caminho da base de dados
+DB_PATH = "database/hugo_bot.db"
+
+def get_db():
+    """Conectar à base de dados"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def save_temp_state(user_id: int, state_data: dict):
     """Guardar estado temporário de um utilizador"""
