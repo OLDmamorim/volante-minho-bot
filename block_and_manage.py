@@ -33,9 +33,7 @@ async def bloquear_dia_command(update: Update, context: ContextTypes.DEFAULT_TYP
     # Mostrar calendário para seleção
     calendar = create_visual_calendar()
     
-    # Guardar estado na BD
-    from temp_state import save_temp_state
-    save_temp_state(user_id, {'blocking_start': True})
+    context.user_data['blocking_start'] = True
     
     await update.message.reply_text(
         "🚫 **Bloquear Período**\n\n"
