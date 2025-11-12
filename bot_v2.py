@@ -89,6 +89,18 @@ def init_database():
         )
     ''')
     
+    # Tabela de períodos bloqueados
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS blocked_dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            period TEXT NOT NULL,
+            reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
