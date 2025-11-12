@@ -266,31 +266,44 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Tipo de pedido
     if data.startswith("tipo_"):
-        tipo = data.replace("tipo_", "")
-        context.user_data['request_type'] = tipo
-        logger.info(f"Tipo selecionado: {tipo}, is_admin_request: {context.user_data.get('is_admin_request', False)}")
-        
-        # Mostrar calendário VISUAL com cores
-        if tipo == "Férias":
-            context.user_data['selecting_vacation_start'] = True
-            calendar_markup = create_visual_calendar()
+        try:
+            tipo = data.replace("tipo_", "")
+            context.user_data['request_type'] = tipo
+            logger.info(f"🔍 DEBUG: Tipo selecionado: {tipo}, user_data: {context.user_data}")
+            
+            # Mostrar calendário VISUAL com cores
+            if tipo == "Férias":
+                context.user_data['selecting_vacation_start'] = True
+                logger.info(f"🔍 DEBUG: Criando calendário para férias...")
+                calendar_markup = create_visual_calendar()
+                logger.info(f"🔍 DEBUG: Calendário criado, editando mensagem...")
+                await query.edit_message_text(
+                    f"📝 Tipo: **{tipo}**\n\n"
+                    f"🏖️ **Selecione a data de INÍCIO das férias:**\n\n"
+                    "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
+                    reply_markup=calendar_markup,
+                    parse_mode='Markdown'
+                )
+                logger.info(f"✅ DEBUG: Mensagem editada com sucesso!")
+            else:
+                logger.info(f"🔍 DEBUG: Criando calendário para {tipo}...")
+                calendar_markup = create_visual_calendar()
+                logger.info(f"🔍 DEBUG: Calendário criado, editando mensagem...")
+                await query.edit_message_text(
+                    f"📝 Tipo: **{tipo}**\n\n"
+                    f"📅 **Selecione a data:**\n\n"
+                    "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
+                    reply_markup=calendar_markup,
+                    parse_mode='Markdown'
+                )
+                logger.info(f"✅ DEBUG: Mensagem editada com sucesso!")
+            return
+        except Exception as e:
+            logger.error(f"❌ ERRO ao processar tipo_{tipo}: {e}", exc_info=True)
             await query.edit_message_text(
-                f"📝 Tipo: **{tipo}**\n\n"
-                f"🏖️ **Selecione a data de INÍCIO das férias:**\n\n"
-                "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
-                reply_markup=calendar_markup,
-                parse_mode='Markdown'
+                f"❌ Erro ao processar pedido. Por favor, tente novamente.\n\nErro: {str(e)}"
             )
-        else:
-            calendar_markup = create_visual_calendar()
-            await query.edit_message_text(
-                f"📝 Tipo: **{tipo}**\n\n"
-                f"📅 **Selecione a data:**\n\n"
-                "🟢 Disponível | 🔴 Ocupado | 🟣 Manhã | 🔵 Tarde | 🟡 Pendente",
-                reply_markup=calendar_markup,
-                parse_mode='Markdown'
-            )
-        return
+            return
     
     # Calendário Visual no fluxo de pedidos
     if data.startswith("cal_day_"):
