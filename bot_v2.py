@@ -26,6 +26,7 @@ from admin_request import admin_create_request_start, admin_cancel
 from dashboard_sync import setup_dashboard_sync
 from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
+from init_admin import ensure_hugo_admin
 
 # Configuração
 BOT_TOKEN = "8365753572:AAGiZrUoYxxfYlrRWZaIwNGkKiWQ_EzdX78"
@@ -89,6 +90,9 @@ def init_database():
 
 # Inicializar base de dados
 init_database()
+
+# Garantir que Hugo é admin
+ensure_hugo_admin()
 
 # Estados do ConversationHandler
 AWAITING_SHOP_NAME = 1
