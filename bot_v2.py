@@ -18,7 +18,7 @@ from telegram.ext import (
     ContextTypes,
 )
 from calendar_helper import TelegramCalendar
-from visual_calendar import create_visual_calendar, process_calendar_callback
+from visual_calendar import create_visual_calendar, process_calendar_callback, get_day_status
 from calendar_links import generate_calendar_links, create_calendar_buttons
 from block_and_manage import bloquear_dia_command, desbloquear_dia_command, gerir_pedidos_command
 from reminders import setup_reminders
