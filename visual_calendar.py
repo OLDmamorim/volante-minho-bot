@@ -12,16 +12,42 @@ DB_PATH = "database/hugo_bot.db"
 
 def get_day_status(year, month, day):
     """
-    Retorna o status de um dia baseado nos pedidos
+    Retorna o status de um dia baseado nos pedidos e bloqueios
     
     Returns:
-        str: 'disponivel', 'ocupado_dia', 'ocupado_manha', 'ocupado_tarde', 'pendente'
+        str: 'disponivel', 'ocupado_dia', 'ocupado_manha', 'ocupado_tarde', 'pendente', 'bloqueado'
     """
     date_str = f"{year:04d}-{month:02d}-{day:02d}"
     
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
+    
+    # Verificar bloqueios primeiro
+    cursor.execute('''
+        SELECT period FROM blocked_dates
+        WHERE date = ?
+    ''', (date_str,))
+    bloqueios = cursor.fetchall()
+    
+    if bloqueios:
+        periodos_bloqueados = [b['period'] for b in bloqueios]
+        
+        if 'Todo o dia' in periodos_bloqueados:
+            conn.close()
+            return 'ocupado_dia'  # Bloqueado todo o dia
+        
+        if 'Manhã' in periodos_bloqueados and 'Tarde' in periodos_bloqueados:
+            conn.close()
+            return 'ocupado_dia'  # Ambos períodos bloqueados
+        
+        if 'Manhã' in periodos_bloqueados:
+            conn.close()
+            return 'ocupado_manha'
+        
+        if 'Tarde' in periodos_bloqueados:
+            conn.close()
+            return 'ocupado_tarde'
     
     # Buscar pedidos para este dia
     cursor.execute('''
@@ -85,8 +111,8 @@ def create_visual_calendar(year=None, month=None):
     )]
     keyboard.append(header)
     
-    # Dias da semana
-    week_days = ["D", "S", "T", "Q", "Q", "S", "S"]
+    # Dias da semana (Segunda a Domingo)
+    week_days = ["S", "T", "Q", "Q", "S", "S", "D"]
     keyboard.append([
         InlineKeyboardButton(day, callback_data="cal_ignore")
         for day in week_days
@@ -123,10 +149,17 @@ def create_visual_calendar(year=None, month=None):
                         'pendente': '🟡'
                     }.get(status, '🟢')
                     
-                    row.append(InlineKeyboardButton(
-                        f"{day}{emoji}",
-                        callback_data=f"cal_day_{year}_{month}_{day}"
-                    ))
+                    # Se dia está ocupado todo o dia, não permitir seleção
+                    if status == 'ocupado_dia':
+                        row.append(InlineKeyboardButton(
+                            f"{day}{emoji}",
+                            callback_data="cal_ignore"
+                        ))
+                    else:
+                        row.append(InlineKeyboardButton(
+                            f"{day}{emoji}",
+                            callback_data=f"cal_day_{year}_{month}_{day}"
+                        ))
         
         keyboard.append(row)
     
