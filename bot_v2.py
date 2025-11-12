@@ -319,14 +319,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Calendário Visual no fluxo de pedidos
     if data.startswith("cal_day_"):
-        parts = data.split('_')
-        year = int(parts[2])
-        month = int(parts[3])
-        day = int(parts[4])
-        
-        date_str = f"{year:04d}-{month:02d}-{day:02d}"
-        date_pt = f"{day:02d}/{month:02d}/{year:04d}"
-        logger.info(f"Data selecionada: {date_str}, context.user_data keys: {list(context.user_data.keys())}")
+        try:
+            parts = data.split('_')
+            year = int(parts[2])
+            month = int(parts[3])
+            day = int(parts[4])
+            
+            date_str = f"{year:04d}-{month:02d}-{day:02d}"
+            date_pt = f"{day:02d}/{month:02d}/{year:04d}"
+            logger.info(f"🔍 DEBUG cal_day: Data={date_str}, user_data={context.user_data}")
+        except Exception as e:
+            logger.error(f"❌ ERRO ao parsear data: {e}", exc_info=True)
+            await query.edit_message_text(f"❌ Erro ao processar data: {str(e)}")
+            return
         
         # Verificar se está a bloquear período (início)
         if context.user_data.get('blocking_start'):
@@ -409,47 +414,59 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         else:
             # Pedido normal (não férias)
-            context.user_data['date'] = date_str
-            context.user_data['date_pt'] = date_pt
-            
-            # Verificar disponibilidade de períodos
-            status = get_day_status(year, month, day)
-            
-            # Construir teclado baseado na disponibilidade
-            keyboard = []
-            
-            if status == 'disponivel':
-                # Dia totalmente disponível
-                keyboard.append([InlineKeyboardButton("🌅 Manhã", callback_data="periodo_Manhã")])
-                keyboard.append([InlineKeyboardButton("🌆 Tarde", callback_data="periodo_Tarde")])
-                keyboard.append([InlineKeyboardButton("📆 Todo o dia", callback_data="periodo_Todo o dia")])
-            elif status == 'ocupado_manha':
-                # Manhã ocupada, só tarde disponível
-                keyboard.append([InlineKeyboardButton("🌆 Tarde", callback_data="periodo_Tarde")])
-            elif status == 'ocupado_tarde':
-                # Tarde ocupada, só manhã disponível
-                keyboard.append([InlineKeyboardButton("🌅 Manhã", callback_data="periodo_Manhã")])
-            elif status == 'pendente':
-                # Há pedidos pendentes, mostrar aviso
+            try:
+                context.user_data['date'] = date_str
+                context.user_data['date_pt'] = date_pt
+                logger.info(f"🔍 DEBUG: Pedido normal, verificando status do dia {date_str}...")
+                
+                # Verificar disponibilidade de períodos
+                status = get_day_status(year, month, day)
+                logger.info(f"🔍 DEBUG: Status do dia: {status}")
+                
+                # Construir teclado baseado na disponibilidade
+                keyboard = []
+                
+                if status == 'disponivel':
+                    # Dia totalmente disponível
+                    keyboard.append([InlineKeyboardButton("🌅 Manhã", callback_data="periodo_Manhã")])
+                    keyboard.append([InlineKeyboardButton("🌆 Tarde", callback_data="periodo_Tarde")])
+                    keyboard.append([InlineKeyboardButton("📆 Todo o dia", callback_data="periodo_Todo o dia")])
+                elif status == 'ocupado_manha':
+                    # Manhã ocupada, só tarde disponível
+                    keyboard.append([InlineKeyboardButton("🌆 Tarde", callback_data="periodo_Tarde")])
+                elif status == 'ocupado_tarde':
+                    # Tarde ocupada, só manhã disponível
+                    keyboard.append([InlineKeyboardButton("🌅 Manhã", callback_data="periodo_Manhã")])
+                elif status == 'pendente':
+                    # Há pedidos pendentes, mostrar aviso
+                    logger.info(f"⚠️ DEBUG: Dia com pedidos pendentes")
+                    await query.edit_message_text(
+                        f"⚠️ **Atenção!**\n\n"
+                        f"📅 Data: **{date_pt}**\n\n"
+                        f"Há pedidos pendentes para este dia. Aguarde a aprovação ou escolha outra data.",
+                        parse_mode='Markdown'
+                    )
+                    return
+                
+                keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                logger.info(f"🔍 DEBUG: Enviando mensagem com {len(keyboard)} opções de período")
                 await query.edit_message_text(
-                    f"⚠️ **Atenção!**\n\n"
+                    f"📝 Tipo: **{context.user_data.get('request_type')}**\n"
                     f"📅 Data: **{date_pt}**\n\n"
-                    f"Há pedidos pendentes para este dia. Aguarde a aprovação ou escolha outra data.",
+                    f"Selecione o período:",
+                    reply_markup=reply_markup,
                     parse_mode='Markdown'
                 )
+                logger.info(f"✅ DEBUG: Mensagem enviada com sucesso!")
                 return
-            
-            keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                f"📝 Tipo: **{context.user_data.get('request_type')}**\n"
-                f"📅 Data: **{date_pt}**\n\n"
-                f"Selecione o período:",
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-            return
+            except Exception as e:
+                logger.error(f"❌ ERRO ao processar pedido normal: {e}", exc_info=True)
+                await query.edit_message_text(
+                    f"❌ Erro ao processar pedido: {str(e)}"
+                )
+                return
     
     # Navegação do calendário visual
     if data.startswith("cal_prev_") or data.startswith("cal_next_"):
