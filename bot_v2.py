@@ -27,6 +27,7 @@ from dashboard_sync import setup_dashboard_sync
 from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
 from init_admin import ensure_hugo_admin
+from delete_user import apagar_user_command
 
 # Configuração
 BOT_TOKEN = "8365753572:AAGiZrUoYxxfYlrRWZaIwNGkKiWQ_EzdX78"
@@ -230,6 +231,34 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "cancelar":
         await query.edit_message_text("❌ Operação cancelada.")
         context.user_data.clear()
+        return
+    
+    # Apagar utilizador
+    if data.startswith("delete_user_"):
+        telegram_id = int(data.replace("delete_user_", ""))
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT shop_name, username FROM users WHERE telegram_id = ?", (telegram_id,))
+        user_info = cursor.fetchone()
+        
+        if user_info:
+            shop_name = user_info['shop_name'] or user_info['username'] or 'Utilizador'
+            cursor.execute("DELETE FROM requests WHERE shop_telegram_id = ?", (telegram_id,))
+            cursor.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))
+            conn.commit()
+            conn.close()
+            
+            await query.edit_message_text(
+                f"✅ Utilizador **{shop_name}** apagado com sucesso!\n\n"
+                f"Todos os pedidos associados também foram removidos.",
+                parse_mode='Markdown'
+            )
+        else:
+            conn.close()
+            await query.edit_message_text("❌ Utilizador não encontrado.")
+        
         return
     
     # Tipo de pedido
@@ -1617,6 +1646,7 @@ def main():
     app.add_handler(CommandHandler('desbloquear_dia', desbloquear_dia_command))
     app.add_handler(CommandHandler('gerir_pedidos', gerir_pedidos_command))
     app.add_handler(CommandHandler('exportar_estatisticas', exportar_estatisticas_command))
+    app.add_handler(CommandHandler('apagar_user', apagar_user_command))
     app.add_handler(CommandHandler('menu', menu_command))
     app.add_handler(CommandHandler('help', help_command))
     app.add_handler(CallbackQueryHandler(callback_handler))
