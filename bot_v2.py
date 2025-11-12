@@ -28,6 +28,9 @@ from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
 from init_admin import ensure_hugo_admin
 from delete_user import apagar_user_command
+from error_handler import error_handler
+from health_check import start_health_check_server, update_bot_status
+from auto_restart import setup_auto_restart
 
 # Configuração
 BOT_TOKEN = "8365753572:AAGiZrUoYxxfYlrRWZaIwNGkKiWQ_EzdX78"
@@ -1621,6 +1624,16 @@ def main():
     # Configurar sincronização automática do dashboard
     setup_dashboard_sync(app)
     logger.info("✅ Sistema de lembretes configurado")
+    
+    # Configurar error handler
+    app.add_error_handler(error_handler)
+    logger.info("✅ Error handler configurado")
+    
+    # Iniciar health check server
+    start_health_check_server(port=8080)
+    
+    # Configurar restart automático
+    setup_auto_restart(app)
     
     # ConversationHandler para registo
     conv_handler = ConversationHandler(
