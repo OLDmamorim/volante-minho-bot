@@ -343,11 +343,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # Verificar se está a bloquear período (início)
-        if context.user_data.get('blocking_start'):
-            context.user_data['blocking_start'] = False
-            context.user_data['blocking_end'] = True
-            context.user_data['block_start_date'] = date_str
-            context.user_data['block_start_date_pt'] = date_pt
+        admin_id = query.from_user.id
+        state = get_temp_state(admin_id)
+        
+        if state.get('blocking_start'):
+            state['blocking_start'] = False
+            state['blocking_end'] = True
+            state['block_start_date'] = date_str
+            state['block_start_date_pt'] = date_pt
+            save_temp_state(admin_id, state)
             
             calendar_markup = create_visual_calendar()
             await query.edit_message_text(
@@ -360,10 +364,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # Verificar se está a bloquear período (fim)
-        if context.user_data.get('blocking_end'):
-            context.user_data['blocking_end'] = False
-            context.user_data['block_end_date'] = date_str
-            context.user_data['block_end_date_pt'] = date_pt
+        if state.get('blocking_end'):
+            state['blocking_end'] = False
+            state['block_end_date'] = date_str
+            state['block_end_date_pt'] = date_pt
+            save_temp_state(admin_id, state)
             
             # Pedir período para bloquear
             keyboard = [
@@ -375,7 +380,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await query.edit_message_text(
                 f"🚫 **Bloquear Período**\n\n"
-                f"📅 Início: **{context.user_data['block_start_date_pt']}**\n"
+                f"📅 Início: **{state['block_start_date_pt']}**\n"
                 f"📅 Fim: **{date_pt}**\n\n"
                 f"Selecione o período a bloquear:",
                 reply_markup=InlineKeyboardMarkup(keyboard),
