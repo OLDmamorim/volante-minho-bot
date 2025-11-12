@@ -890,10 +890,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             try:
                 cursor.execute('''
-                    INSERT INTO blocked_dates (date, period, reason, blocked_by)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO blocked_dates (start_date, end_date, period, reason, blocked_by)
+                    VALUES (?, ?, ?, ?, ?)
                 ''', (
                     date_str,
+                    date_str,  # Para bloqueio dia a dia, start_date = end_date
                     context.user_data['block_period'],
                     reason,
                     admin_id
