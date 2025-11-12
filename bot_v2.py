@@ -99,6 +99,8 @@ def init_database():
             period TEXT NOT NULL,
             reason TEXT,
             blocked_by INTEGER NOT NULL,
+            status TEXT DEFAULT 'active',
+            temp_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(start_date, end_date, period)
         )
@@ -365,6 +367,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['block_end_date'] = date_str
             context.user_data['block_end_date_pt'] = date_pt
             
+            # Guardar datas na BD para usar depois
+            admin_id = query.from_user.id
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO temp_states (user_id, state_data)
+                VALUES (?, ?)
+            ''', (admin_id, f"{context.user_data['block_start_date']}|{context.user_data['block_end_date']}|{context.user_data['block_start_date_pt']}|{date_pt}"))
+            conn.commit()
+            conn.close()
+            
             # Pedir período para bloquear
             keyboard = [
                 [InlineKeyboardButton("🌅 Manhã", callback_data="block_period_Manhã")],
@@ -523,16 +536,38 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         periodo = data.replace("block_period_", "")
         admin_id = query.from_user.id
         
-        # Pedir motivo do bloqueio
-        context.user_data['block_period'] = periodo
-        context.user_data['awaiting_block_reason'] = True
+        # Ler datas da BD
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT state_data FROM temp_states WHERE user_id = ?', (admin_id,))
+        row = cursor.fetchone()
         
-        logger.info(f"📦 DEBUG: Estado guardado: {dict(context.user_data)}")
+        if not row:
+            await query.edit_message_text("❌ Erro: dados não encontrados. Tente novamente.")
+            conn.close()
+            return
+        
+        dates_data = row[0].split('|')
+        block_start_date = dates_data[0]
+        block_end_date = dates_data[1]
+        block_start_date_pt = dates_data[2]
+        block_end_date_pt = dates_data[3]
+        
+        # Atualizar temp_states com período
+        cursor.execute('''
+            UPDATE temp_states 
+            SET state_data = ? 
+            WHERE user_id = ?
+        ''', (f"{block_start_date}|{block_end_date}|{block_start_date_pt}|{block_end_date_pt}|{periodo}", admin_id))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"📦 DEBUG: Período {periodo} guardado na BD para admin {admin_id}")
         
         await query.edit_message_text(
             f"🚫 **Bloquear Período**\n\n"
-            f"📅 De: **{context.user_data['block_start_date_pt']}**\n"
-            f"📅 Até: **{context.user_data['block_end_date_pt']}**\n"
+            f"📅 De: **{block_start_date_pt}**\n"
+            f"📅 Até: **{block_end_date_pt}**\n"
             f"🕐 Período: **{periodo}**\n\n"
             f"📝 Por favor, envie o motivo do bloqueio (ou \"não\" para pular):",
             parse_mode='Markdown'
@@ -876,73 +911,85 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await menu_command(update, context)
         return
     
-    # Motivo de bloqueio
-    if context.user_data.get('awaiting_block_reason'):
+    # Motivo de bloqueio - LER DA BD
+    admin_id = update.effective_user.id
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT state_data FROM temp_states WHERE user_id = ?', (admin_id,))
+    row = cursor.fetchone()
+    
+    if row and '|' in row[0]:
         logger.info(f"🔍 DEBUG: Recebido motivo de bloqueio: '{text}'")
-        logger.info(f"📦 DEBUG: context.user_data: {dict(context.user_data)}")
         
-        context.user_data['awaiting_block_reason'] = False
-        admin_id = update.effective_user.id
-        
-        reason = text if text.lower() != "não" else None
-        logger.info(f"🔍 DEBUG: Motivo processado: '{reason}'")
-        
-        # Calcular todos os dias do período
-        from datetime import datetime, timedelta
-        
-        start_date = datetime.strptime(context.user_data['block_start_date'], '%Y-%m-%d')
-        end_date = datetime.strptime(context.user_data['block_end_date'], '%Y-%m-%d')
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        blocked_count = 0
-        already_blocked = 0
-        current_date = start_date
-        
-        while current_date <= end_date:
-            date_str = current_date.strftime('%Y-%m-%d')
+        # Parsear dados da BD
+        dates_data = row[0].split('|')
+        if len(dates_data) >= 5:
+            block_start_date = dates_data[0]
+            block_end_date = dates_data[1]
+            block_start_date_pt = dates_data[2]
+            block_end_date_pt = dates_data[3]
+            block_period = dates_data[4]
             
-            try:
-                cursor.execute('''
-                    INSERT INTO blocked_dates (start_date, end_date, period, reason, blocked_by)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (
-                    date_str,
-                    date_str,  # Para bloqueio dia a dia, start_date = end_date
-                    context.user_data['block_period'],
-                    reason,
-                    admin_id
-                ))
-                blocked_count += 1
-            except sqlite3.IntegrityError:
-                already_blocked += 1
+            reason = text if text.lower() != "não" else None
+            logger.info(f"🔍 DEBUG: Motivo processado: '{reason}'")
             
-            current_date += timedelta(days=1)
-        
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"✅ DEBUG: Bloqueios gravados! Total: {blocked_count}, Já bloqueados: {already_blocked}")
-        
-        # Mensagem de confirmação
-        total_days = (end_date - start_date).days + 1
-        
-        msg = f"✅ **Período Bloqueado!**\n\n"
-        msg += f"📅 De: {context.user_data['block_start_date_pt']}\n"
-        msg += f"📅 Até: {context.user_data['block_end_date_pt']}\n"
-        msg += f"🕐 Período: {context.user_data['block_period']}\n"
-        msg += f"📝 Motivo: {reason or 'N/A'}\n\n"
-        msg += f"📊 Total de dias: {total_days}\n"
-        msg += f"✅ Bloqueados: {blocked_count}\n"
-        
-        if already_blocked > 0:
-            msg += f"⚠️ Já bloqueados: {already_blocked}"
-        
-        await update.message.reply_text(msg, parse_mode='Markdown')
-        
-        context.user_data.clear()
-        return
+            # Calcular todos os dias do período
+            from datetime import datetime, timedelta
+            
+            start_date = datetime.strptime(block_start_date, '%Y-%m-%d')
+            end_date = datetime.strptime(block_end_date, '%Y-%m-%d')
+            
+            blocked_count = 0
+            already_blocked = 0
+            current_date = start_date
+            
+            while current_date <= end_date:
+                date_str = current_date.strftime('%Y-%m-%d')
+                
+                try:
+                    cursor.execute('''
+                        INSERT INTO blocked_dates (start_date, end_date, period, reason, blocked_by, status)
+                        VALUES (?, ?, ?, ?, ?, 'active')
+                    ''', (
+                        date_str,
+                        date_str,
+                        block_period,
+                        reason,
+                        admin_id
+                    ))
+                    blocked_count += 1
+                except sqlite3.IntegrityError:
+                    already_blocked += 1
+                
+                current_date += timedelta(days=1)
+            
+            conn.commit()
+            
+            # Limpar temp_states
+            cursor.execute('DELETE FROM temp_states WHERE user_id = ?', (admin_id,))
+            conn.commit()
+            conn.close()
+            
+            logger.info(f"✅ DEBUG: Bloqueios gravados! Total: {blocked_count}, Já bloqueados: {already_blocked}")
+            
+            # Mensagem de confirmação
+            total_days = (end_date - start_date).days + 1
+            
+            msg = f"✅ **Período Bloqueado!**\n\n"
+            msg += f"📅 De: {block_start_date_pt}\n"
+            msg += f"📅 Até: {block_end_date_pt}\n"
+            msg += f"🕐 Período: {block_period}\n"
+            msg += f"📝 Motivo: {reason or 'N/A'}\n\n"
+            msg += f"📊 Total de dias: {total_days}\n"
+            msg += f"✅ Bloqueados: {blocked_count}\n"
+            
+            if already_blocked > 0:
+                msg += f"⚠️ Já bloqueados: {already_blocked}"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            return
+    
+    conn.close()
     
     # Observações
     if context.user_data.get('awaiting_observations'):
