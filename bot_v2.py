@@ -1726,6 +1726,13 @@ def main():
     """Iniciar o bot"""
     logger.info("🤖 Bot Volante Minho 2.0 V2 iniciado!")
     
+    # Executar migração para garantir que temp_states existe
+    try:
+        from migrate_temp_states import migrate
+        migrate()
+    except Exception as e:
+        logger.error(f"⚠️ Erro na migração: {e}")
+    
     # Configurar persistência de context.user_data
     persistence = PicklePersistence(filepath="database/bot_persistence.pkl")
     app = Application.builder().token(BOT_TOKEN).persistence(persistence).post_init(setup_bot_commands).build()
