@@ -24,29 +24,37 @@ def get_db():
 
 async def bloquear_dia_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /bloquear_dia - Bloquear período (admin)"""
-    user_id = update.effective_user.id
-    
-    if user_id not in ADMIN_IDS:
-        await update.message.reply_text("❌ Você não tem permissão para usar este comando.")
-        return
-    
-    # Mostrar calendário para seleção
-    calendar = create_visual_calendar()
-    
-    # Guardar estado na BD
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM temp_states WHERE user_id = ?', (user_id,))
-    cursor.execute('INSERT INTO temp_states (user_id, state_data) VALUES (?, ?)', (user_id, 'blocking_start'))
-    conn.commit()
-    conn.close()
-    
-    await update.message.reply_text(
-        "🚫 **Bloquear Período**\n\n"
-        "📅 Selecione a data de **INÍCIO** do bloqueio:",
-        reply_markup=calendar,
-        parse_mode='Markdown'
-    )
+    try:
+        user_id = update.effective_user.id
+        logger.info(f"📦 /bloquear_dia chamado por user_id={user_id}")
+        
+        if user_id not in ADMIN_IDS:
+            await update.message.reply_text("❌ Você não tem permissão para usar este comando.")
+            return
+        
+        # Mostrar calendário para seleção
+        calendar = create_visual_calendar()
+        logger.info(f"✅ Calendário criado")
+        
+        # Guardar estado na BD
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM temp_states WHERE user_id = ?', (user_id,))
+        cursor.execute('INSERT INTO temp_states (user_id, state_data) VALUES (?, ?)', (user_id, 'blocking_start'))
+        conn.commit()
+        conn.close()
+        logger.info(f"✅ Estado guardado na BD")
+        
+        await update.message.reply_text(
+            "🚫 **Bloquear Período**\n\n"
+            "📅 Selecione a data de **INÍCIO** do bloqueio:",
+            reply_markup=calendar,
+            parse_mode='Markdown'
+        )
+        logger.info(f"✅ Mensagem enviada")
+    except Exception as e:
+        logger.error(f"❌ ERRO em bloquear_dia_command: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Erro: {str(e)}")
 
 
 async def desbloquear_dia_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
