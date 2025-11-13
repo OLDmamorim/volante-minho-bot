@@ -23,7 +23,7 @@ from visual_calendar import create_visual_calendar, process_calendar_callback, g
 from calendar_links import generate_calendar_links, create_calendar_buttons
 from block_and_manage import bloquear_dia_command, desbloquear_dia_command, gerir_pedidos_command
 from reminders import setup_reminders
-from admin_request import admin_create_request_start, admin_cancel
+from admin_request import admin_create_request_start, admin_cancel, handle_admin_tipo_apoio, handle_admin_tipo_volante, handle_admin_shop_selection
 from dashboard_sync import setup_dashboard_sync
 from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
@@ -300,6 +300,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
             await query.edit_message_text("❌ Utilizador não encontrado.")
         
+        return
+    
+    # Admin: Tipo de pedido (Apoio ou Volante)
+    if data == "admin_tipo_Apoio":
+        await handle_admin_tipo_apoio(query)
+        return
+    
+    if data == "admin_tipo_Volante":
+        await handle_admin_tipo_volante(query, context)
+        return
+    
+    # Admin: Seleção de loja para apoio
+    if data.startswith("admin_shop_"):
+        shop_id = int(data.replace("admin_shop_", ""))
+        await handle_admin_shop_selection(query, context, shop_id)
         return
     
     # Tipo de pedido
