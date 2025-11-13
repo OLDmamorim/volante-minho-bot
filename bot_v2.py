@@ -1591,24 +1591,38 @@ async def agenda_semana_command(update: Update, context: ContextTypes.DEFAULT_TY
         date_pt = date_obj.strftime('%d/%m/%Y')
         weekday = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][date_obj.weekday()]
         
+        # Verificar bloqueios
         cursor.execute('''
-            SELECT r.*, u.shop_name 
-            FROM requests r
-            JOIN users u ON r.shop_telegram_id = u.telegram_id
-            WHERE r.start_date = ? AND r.status = 'Aprovado'
-            ORDER BY r.period
+            SELECT period, reason FROM blocked_dates
+            WHERE date = ? AND status = 'active'
         ''', (date_str,))
         
-        requests = cursor.fetchall()
+        blocked = cursor.fetchone()
         
         text += f"**{weekday}, {date_pt}**\n"
         
-        if requests:
-            for req in requests:
-                period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
-                text += f"{period_emoji} {req['shop_name']} - {req['request_type']} ({req['period']})\n"
+        if blocked:
+            period_emoji = "🌅" if blocked['period'] == "Manhã" else ("🌆" if blocked['period'] == "Tarde" else "📆")
+            text += f"🚫 **BLOQUEADO** ({blocked['period']})\n"
+            text += f"📝 Motivo: {blocked['reason'] or 'N/A'}\n"
         else:
-            text += "🟢 Sem pedidos aprovados\n"
+            # Verificar pedidos aprovados
+            cursor.execute('''
+                SELECT r.*, u.shop_name 
+                FROM requests r
+                JOIN users u ON r.shop_telegram_id = u.telegram_id
+                WHERE r.start_date = ? AND r.status = 'Aprovado'
+                ORDER BY r.period
+            ''', (date_str,))
+            
+            requests = cursor.fetchall()
+            
+            if requests:
+                for req in requests:
+                    period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
+                    text += f"{period_emoji} {req['shop_name']} - {req['request_type']} ({req['period']})\n"
+            else:
+                text += "🟢 Sem pedidos aprovados\n"
         
         text += "\n"
     
