@@ -1594,7 +1594,7 @@ async def agenda_semana_command(update: Update, context: ContextTypes.DEFAULT_TY
         # Verificar bloqueios
         cursor.execute('''
             SELECT period, reason FROM blocked_dates
-            WHERE date = ? AND status = 'active'
+            WHERE date = ?
         ''', (date_str,))
         
         blocked = cursor.fetchone()
