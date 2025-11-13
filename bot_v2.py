@@ -1102,11 +1102,20 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Pedido normal ou admin
         is_admin_request = context.user_data.get('is_admin_request', False)
+        logger.info(f"📦 DEBUG: is_admin_request={is_admin_request}, context.user_data={context.user_data}")
         
         if is_admin_request:
             # Pedido admin - para loja Volante, já aprovado
-            shop_id = context.user_data['admin_request_shop_id']
-            shop_name = context.user_data['admin_request_shop_name']
+            shop_id = context.user_data.get('admin_request_shop_id')
+            shop_name = context.user_data.get('admin_request_shop_name')
+            logger.info(f"📦 DEBUG: Admin request - shop_id={shop_id}, shop_name={shop_name}")
+            
+            if not shop_id or not shop_name:
+                logger.error(f"❌ ERRO: shop_id ou shop_name não definidos! context.user_data={context.user_data}")
+                await update.message.reply_text("❌ Erro: Informação da loja não encontrada. Tente novamente.")
+                context.user_data.clear()
+                return
+            
             status = 'Aprovado'
             admin_id = update.effective_user.id
         else:
