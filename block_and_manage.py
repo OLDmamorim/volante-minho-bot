@@ -36,7 +36,8 @@ async def bloquear_dia_command(update: Update, context: ContextTypes.DEFAULT_TYP
     # Guardar estado na BD
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('INSERT OR REPLACE INTO temp_states (user_id, state_data) VALUES (?, ?)', (user_id, 'blocking_start'))
+    cursor.execute('DELETE FROM temp_states WHERE user_id = ?', (user_id,))
+    cursor.execute('INSERT INTO temp_states (user_id, state_data) VALUES (?, ?)', (user_id, 'blocking_start'))
     conn.commit()
     conn.close()
     
