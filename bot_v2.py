@@ -4,7 +4,7 @@ Bot Volante Minho 2.0 - Versão Completa com Calendário Visual e Férias com Pe
 """
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime as dt, datetime, timedelta
 import os
 from sync_mysql import sync_request_to_mysql, sync_user_to_mysql
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -638,7 +638,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             UPDATE requests 
             SET status = 'Aprovado', processed_at = ?, processed_by = ?
             WHERE id = ?
-        ''', (datetime.now(), admin_id, request_id))
+        ''', (dt.now(), admin_id, request_id))
         
         # Buscar info do pedido
         cursor.execute('''
@@ -902,9 +902,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute('''
                 UPDATE requests
                 SET status = 'Cancelado', processed_at = ?, processed_by = ?
-                WHERE id = ?
-            ''', (datetime.now(), admin_id, request_id))
-            
+                WHERE id = ?            ''', (dt.now(), admin_id, request_id))        
             conn.commit()
             
             # Notificar loja
@@ -1137,7 +1135,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute('''
                 INSERT INTO requests (shop_telegram_id, request_type, start_date, period, observations, status, processed_at, processed_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (shop_id, request_type, date, period, observations, status, datetime.now(), admin_id))
+            ''', (shop_id, request_type, date, period, observations, status, dt.now(), admin_id))
         else:
             # Pedido normal pendente
             cursor.execute('''
@@ -1167,7 +1165,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 period=period,
                 status='approved' if is_admin_request else 'pending',
                 rejection_reason=None,
-                created_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                created_at=dt.now().strftime('%Y-%m-%d %H:%M:%S')
             )
             logger.info(f"Pedido {request_id} sincronizado com MySQL ({'admin' if is_admin_request else 'normal'})")
         except Exception as e:
@@ -1265,7 +1263,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             UPDATE requests 
             SET status = 'Rejeitado', rejection_reason = ?, processed_at = ?, processed_by = ?
             WHERE id = ?
-        ''', (reason, datetime.now(), admin_id, request_id))
+        ''', (reason, dt.now(), admin_id, request_id))
         
         # Buscar info do pedido
         cursor.execute('''
@@ -1356,8 +1354,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def calendario_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /calendario - Mostrar calendário visual"""
-    year = datetime.now().year
-    month = datetime.now().month
+    year = dt.now().year
+    month = dt.now().month
     
     # Criar calendário visual
     calendar_markup = create_visual_calendar(year, month)
@@ -1583,7 +1581,7 @@ async def agenda_semana_command(update: Update, context: ContextTypes.DEFAULT_TY
     cursor = conn.cursor()
     
     # Próximos 7 dias
-    today = datetime.now().date()
+    today = dt.now().date()
     dates = [(today + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
     
     text = "📅 **Agenda da Semana**\n\n"
