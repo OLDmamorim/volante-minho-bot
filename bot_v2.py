@@ -344,12 +344,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"❌ Erro ao processar data: {str(e)}")
             return
         
-        # Verificar se está a bloquear período (início)
-        if context.user_data.get('blocking_start'):
-            context.user_data['blocking_start'] = False
-            context.user_data['blocking_end'] = True
-            context.user_data['block_start_date'] = date_str
-            context.user_data['block_start_date_pt'] = date_pt
+        # Verificar se está a bloquear período (início) - LER DA BD
+        admin_id = query.from_user.id
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT state_data FROM temp_states WHERE user_id = ?', (admin_id,))
+        row = cursor.fetchone()
+        
+        if row and row[0] == 'blocking_start':
+            # Guardar data de início e mudar estado para blocking_end
+            cursor.execute('UPDATE temp_states SET state_data = ? WHERE user_id = ?', (f'blocking_end|{date_str}|{date_pt}', admin_id))
+            conn.commit()
+            conn.close()
             
             calendar_markup = create_visual_calendar()
             await query.edit_message_text(
@@ -361,20 +367,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
-        # Verificar se está a bloquear período (fim)
-        if context.user_data.get('blocking_end'):
-            context.user_data['blocking_end'] = False
-            context.user_data['block_end_date'] = date_str
-            context.user_data['block_end_date_pt'] = date_pt
+        # Verificar se está a bloquear período (fim) - LER DA BD
+        if row and row[0].startswith('blocking_end|'):
+            parts = row[0].split('|')
+            block_start_date = parts[1]
+            block_start_date_pt = parts[2]
             
-            # Guardar datas na BD para usar depois
-            admin_id = query.from_user.id
-            conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO temp_states (user_id, state_data)
-                VALUES (?, ?)
-            ''', (admin_id, f"{context.user_data['block_start_date']}|{context.user_data['block_end_date']}|{context.user_data['block_start_date_pt']}|{date_pt}"))
+            # Atualizar estado com data fim
+            cursor.execute('UPDATE temp_states SET state_data = ? WHERE user_id = ?', 
+                          (f'{block_start_date}|{date_str}|{block_start_date_pt}|{date_pt}', admin_id))
             conn.commit()
             conn.close()
             
@@ -388,13 +389,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await query.edit_message_text(
                 f"🚫 **Bloquear Período**\n\n"
-                f"📅 Início: **{context.user_data['block_start_date_pt']}**\n"
+                f"📅 Início: **{block_start_date_pt}**\n"
                 f"📅 Fim: **{date_pt}**\n\n"
                 f"Selecione o período a bloquear:",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode='Markdown'
             )
             return
+        
+        conn.close()
         
         # Verificar se é férias
         if context.user_data.get('selecting_vacation_start'):

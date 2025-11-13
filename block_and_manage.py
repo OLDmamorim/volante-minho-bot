@@ -33,7 +33,12 @@ async def bloquear_dia_command(update: Update, context: ContextTypes.DEFAULT_TYP
     # Mostrar calendário para seleção
     calendar = create_visual_calendar()
     
-    context.user_data['blocking_start'] = True
+    # Guardar estado na BD
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO temp_states (user_id, state_data) VALUES (?, ?)', (user_id, 'blocking_start'))
+    conn.commit()
+    conn.close()
     
     await update.message.reply_text(
         "🚫 **Bloquear Período**\n\n"
