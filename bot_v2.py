@@ -742,8 +742,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Reconstruir teclado com checkboxes atualizados
         keyboard = []
         for bloqueio in context.user_data.get('unblock_list', []):
-            date_obj = datetime.strptime(bloqueio['date'], '%Y-%m-%d')
-            date_pt = date_obj.strftime('%d/%m/%Y')
+            start_date_obj = datetime.strptime(bloqueio['start_date'], '%Y-%m-%d')
+            end_date_obj = datetime.strptime(bloqueio['end_date'], '%Y-%m-%d')
+            
+            if bloqueio['start_date'] == bloqueio['end_date']:
+                date_pt = start_date_obj.strftime('%d/%m/%Y')
+            else:
+                date_pt = f"{start_date_obj.strftime('%d/%m/%Y')} - {end_date_obj.strftime('%d/%m/%Y')}"
             
             periodo_emoji = "🌅" if bloqueio['period'] == "Manhã" else ("🌆" if bloqueio['period'] == "Tarde" else "📆")
             
