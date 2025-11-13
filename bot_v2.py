@@ -29,6 +29,7 @@ from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
 from init_admin import ensure_hugo_admin
 from delete_user import apagar_user_command
+from admin_management import adicionar_admin_command, handle_promote_admin
 from error_handler import error_handler
 from health_check import start_health_check_server, update_bot_status
 from auto_restart import setup_auto_restart
@@ -259,6 +260,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         return
     
+    # Promover a admin
+    if data.startswith("promote_admin_"):
+        user_id_to_promote = int(data.replace("promote_admin_", ""))
+        await handle_promote_admin(query, user_id_to_promote)
+        return
+    
     # Apagar utilizador
     if data.startswith("delete_user_"):
         telegram_id = int(data.replace("delete_user_", ""))
@@ -271,13 +278,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if user_info:
             shop_name = user_info['shop_name'] or user_info['username'] or 'Utilizador'
+            
+            # Verificar se era admin
+            cursor.execute("SELECT is_admin FROM users WHERE telegram_id = ?", (telegram_id,))
+            was_admin = cursor.fetchone()['is_admin']
+            
             cursor.execute("DELETE FROM requests WHERE shop_telegram_id = ?", (telegram_id,))
             cursor.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))
             conn.commit()
             conn.close()
             
+            admin_note = " (Admin removido)" if was_admin else ""
+            logger.info(f"✅ Utilizador {shop_name} (ID: {telegram_id}) apagado{admin_note}")
+            
             await query.edit_message_text(
-                f"✅ Utilizador **{shop_name}** apagado com sucesso!\n\n"
+                f"✅ Utilizador **{shop_name}** apagado com sucesso!{admin_note}\n\n"
                 f"Todos os pedidos associados também foram removidos.",
                 parse_mode='Markdown'
             )
@@ -1724,6 +1739,8 @@ async def setup_bot_commands(app: Application):
         BotCommand("desbloquear_dia", "Desbloquear dias (admin)"),
         BotCommand("gerir_pedidos", "Gerir pedidos aprovados (admin)"),
         BotCommand("exportar_estatisticas", "Exportar estatísticas Excel (admin)"),
+        BotCommand("adicionar_admin", "Adicionar administrador (super-admin)"),
+        BotCommand("apagar_user", "Apagar utilizador/loja (admin)"),
         BotCommand("menu", "Voltar ao menu principal"),
         BotCommand("help", "Mostrar ajuda"),
     ]
@@ -1789,6 +1806,7 @@ def main():
     app.add_handler(CommandHandler('gerir_pedidos', gerir_pedidos_command))
     app.add_handler(CommandHandler('exportar_estatisticas', exportar_estatisticas_command))
     app.add_handler(CommandHandler('apagar_user', apagar_user_command))
+    app.add_handler(CommandHandler('adicionar_admin', adicionar_admin_command))
     app.add_handler(CommandHandler('menu', menu_command))
     app.add_handler(CommandHandler('help', help_command))
     app.add_handler(CallbackQueryHandler(callback_handler))

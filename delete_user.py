@@ -32,12 +32,12 @@ async def apagar_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn = get_db()
     cursor = conn.cursor()
     
-    # Obter todos os utilizadores (exceto admins)
+    # Obter todos os utilizadores (incluindo admins, exceto super-admin)
     cursor.execute('''
-        SELECT telegram_id, username, shop_name, registered_at
+        SELECT telegram_id, username, shop_name, registered_at, is_admin
         FROM users
-        WHERE is_admin = FALSE
-        ORDER BY shop_name ASC
+        WHERE telegram_id != 228613920
+        ORDER BY is_admin DESC, shop_name ASC
     ''')
     
     users = cursor.fetchall()
@@ -60,7 +60,8 @@ async def apagar_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             date_str = 'N/A'
         
         shop_name = user['shop_name'] or user['username'] or 'Sem nome'
-        text = f"🗑️ {shop_name} (@{user['username'] or 'N/A'}) - {date_str}"
+        admin_badge = "👑 " if user['is_admin'] else ""
+        text = f"🗑️ {admin_badge}{shop_name} (@{user['username'] or 'N/A'}) - {date_str}"
         
         keyboard.append([InlineKeyboardButton(
             text,
@@ -70,8 +71,9 @@ async def apagar_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")])
     
     await update.message.reply_text(
-        "🗑️ **Apagar Utilizador**\n\n"
+        "🗑️ **Apagar Utilizador/Loja**\n\n"
         "⚠️ **ATENÇÃO:** Esta ação não pode ser desfeita!\n"
+        "👑 = Administrador\n\n"
         "Selecione o utilizador que deseja apagar:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
