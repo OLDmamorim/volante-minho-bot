@@ -921,11 +921,16 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute('SELECT state_data FROM temp_states WHERE user_id = ?', (admin_id,))
     row = cursor.fetchone()
     
+    logger.info(f"📦 DEBUG message_handler: admin_id={admin_id}, row={row}")
+    
     if row and '|' in row[0]:
         logger.info(f"🔍 DEBUG: Recebido motivo de bloqueio: '{text}'")
+        logger.info(f"📦 DEBUG: state_data={row[0]}")
         
         # Parsear dados da BD
         dates_data = row[0].split('|')
+        logger.info(f"📦 DEBUG: dates_data={dates_data}, len={len(dates_data)}")
+        
         if len(dates_data) >= 5:
             block_start_date = dates_data[0]
             block_end_date = dates_data[1]
