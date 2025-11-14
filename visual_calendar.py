@@ -149,17 +149,11 @@ def create_visual_calendar(year=None, month=None):
                         'pendente': '🟡'
                     }.get(status, '🟢')
                     
-                    # Se dia está ocupado todo o dia, não permitir seleção
-                    if status == 'ocupado_dia':
-                        row.append(InlineKeyboardButton(
-                            f"{day}{emoji}",
-                            callback_data="cal_ignore"
-                        ))
-                    else:
-                        row.append(InlineKeyboardButton(
-                            f"{day}{emoji}",
-                            callback_data=f"cal_day_{year}_{month}_{day}"
-                        ))
+                    # Todos os dias são clicáveis para mostrar informações
+                    row.append(InlineKeyboardButton(
+                        f"{day}{emoji}",
+                        callback_data=f"cal_day_{year}_{month}_{day}"
+                    ))
         
         keyboard.append(row)
     
