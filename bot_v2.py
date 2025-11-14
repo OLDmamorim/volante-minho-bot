@@ -260,6 +260,23 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         return
     
+    # Voltar ao calendário
+    if data == "voltar_calendario":
+        calendar_markup = create_visual_calendar()
+        month_names = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                       'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+        year = dt.now().year
+        month = dt.now().month
+        await query.edit_message_text(
+            f"📅 **Calendário de Pedidos - {month_names[month]} {year}**\n\n"
+            "🟢 Disponível | 🔴 Ocupado todo o dia\n"
+            "🟣 Manhã ocupada | 🔵 Tarde ocupada\n"
+            "| 🟡 Pendente",
+            reply_markup=calendar_markup,
+            parse_mode='Markdown'
+        )
+        return
+    
     # Promover a admin
     if data.startswith("promote_admin_"):
         user_id_to_promote = int(data.replace("promote_admin_", ""))
@@ -374,12 +391,74 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(f"❌ Erro ao processar data: {str(e)}")
             return
         
-        # Verificar se está a bloquear período (início) - LER DA BD
+        # Verificar se usuário está em algum fluxo ativo
         admin_id = query.from_user.id
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('SELECT state_data FROM temp_states WHERE user_id = ?', (admin_id,))
         row = cursor.fetchone()
+        
+        # Se não está em nenhum fluxo ativo, mostrar informações do dia
+        has_active_flow = (
+            row is not None or
+            context.user_data.get('selecting_vacation_start') or
+            context.user_data.get('selecting_vacation_end') or
+            context.user_data.get('request_type')
+        )
+        
+        if not has_active_flow:
+            # Consulta de informação do dia
+            # Verificar bloqueios
+            cursor.execute('''
+                SELECT period, reason, blocked_by FROM blocked_dates
+                WHERE start_date = ?
+            ''', (date_str,))
+            
+            blocked = cursor.fetchone()
+            
+            # Verificar pedidos aprovados
+            cursor.execute('''
+                SELECT r.*, u.shop_name 
+                FROM requests r
+                JOIN users u ON r.shop_telegram_id = u.telegram_id
+                WHERE r.start_date = ? AND r.status = 'Aprovado'
+                ORDER BY r.period
+            ''', (date_str,))
+            
+            requests = cursor.fetchall()
+            conn.close()
+            
+            # Construir mensagem
+            msg = f"📅 **{date_pt}**\n\n"
+            
+            if blocked:
+                period_emoji = "🌅" if blocked['period'] == "Manhã" else ("🌆" if blocked['period'] == "Tarde" else "📆")
+                msg += f"🚫 **BLOQUEADO** ({blocked['period']})\n"
+                msg += f"📝 Motivo: {blocked['reason'] or 'N/A'}\n\n"
+            
+            if requests:
+                msg += "**Pedidos Aprovados:**\n\n"
+                for req in requests:
+                    period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
+                    msg += f"{period_emoji} **{req['shop_name']}**\n"
+                    msg += f"   Tipo: {req['request_type']}\n"
+                    msg += f"   Período: {req['period']}\n"
+                    if req['observations']:
+                        msg += f"   Obs: {req['observations']}\n"
+                    msg += "\n"
+            
+            if not blocked and not requests:
+                msg += "🟢 Dia disponível\n"
+            
+            # Botão para voltar ao calendário
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Calendário", callback_data="voltar_calendario")]]
+            
+            await query.edit_message_text(
+                msg,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            return
         
         if row and row[0] == 'blocking_start':
             # Guardar data de início e mudar estado para blocking_end
