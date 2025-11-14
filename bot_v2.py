@@ -422,39 +422,47 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if is_occupied and not is_blocking_flow:
             # Mostrar informação do dia ocupado
-            conn.close()
-            
-            # Construir mensagem
-            msg = f"📅 **{date_pt}**\n\n"
-            
-            if blocked:
-                period_emoji = "🌅" if blocked['period'] == "Manhã" else ("🌆" if blocked['period'] == "Tarde" else "📆")
-                msg += f"🚫 **BLOQUEADO** ({blocked['period']})\n"
-                msg += f"📝 Motivo: {blocked['reason'] or 'N/A'}\n\n"
-            
-            if requests:
-                msg += "**Pedidos Aprovados:**\n\n"
-                for req in requests:
-                    period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
-                    msg += f"{period_emoji} **{req['shop_name']}**\n"
-                    msg += f"   Tipo: {req['request_type']}\n"
-                    msg += f"   Período: {req['period']}\n"
-                    if req['observations']:
-                        msg += f"   Obs: {req['observations']}\n"
-                    msg += "\n"
-            
-            if not blocked and not requests:
-                msg += "🟢 Dia disponível\n"
-            
-            # Botão para voltar ao calendário
-            keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Calendário", callback_data="voltar_calendario")]]
-            
-            await query.edit_message_text(
-                msg,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
-            return
+            try:
+                conn.close()
+                logger.info(f"📍 DEBUG: Dia ocupado {date_pt}, bloqueios={blocked is not None}, pedidos={len(requests)}")
+                
+                # Construir mensagem
+                msg = f"📅 **{date_pt}**\n\n"
+                
+                if blocked:
+                    period_emoji = "🌅" if blocked['period'] == "Manhã" else ("🌆" if blocked['period'] == "Tarde" else "📆")
+                    msg += f"🚫 **BLOQUEADO** ({blocked['period']})\n"
+                    msg += f"📝 Motivo: {blocked['reason'] or 'N/A'}\n\n"
+                
+                if requests:
+                    msg += "**Pedidos Aprovados:**\n\n"
+                    for req in requests:
+                        period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
+                        msg += f"{period_emoji} **{req['shop_name']}**\n"
+                        msg += f"   Tipo: {req['request_type']}\n"
+                        msg += f"   Período: {req['period']}\n"
+                        if req['observations']:
+                            msg += f"   Obs: {req['observations']}\n"
+                        msg += "\n"
+                
+                if not blocked and not requests:
+                    msg += "🟢 Dia disponível\n"
+                
+                # Botão para voltar ao calendário
+                keyboard = [[InlineKeyboardButton("⬅️ Voltar ao Calendário", callback_data="voltar_calendario")]]
+                
+                logger.info(f"📍 DEBUG: Enviando mensagem de info do dia...")
+                await query.edit_message_text(
+                    msg,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+                logger.info(f"✅ DEBUG: Mensagem enviada com sucesso!")
+                return
+            except Exception as e:
+                logger.error(f"❌ ERRO ao mostrar info do dia: {e}", exc_info=True)
+                await query.edit_message_text(f"❌ Erro ao mostrar informações do dia: {str(e)}")
+                return
         
         if row and row[0] == 'blocking_start':
             # Guardar data de início e mudar estado para blocking_end
