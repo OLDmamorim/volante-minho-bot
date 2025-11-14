@@ -61,7 +61,7 @@ async def apagar_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         shop_name = user['shop_name'] or user['username'] or 'Sem nome'
         admin_badge = "👑 " if user['is_admin'] else ""
-        text = f"🗑️ {admin_badge}{shop_name} (@{user['username'] or 'N/A'}) - {date_str}"
+        text = f"🗑️ {admin_badge}{shop_name} (ID: {user['telegram_id']})"
         
         keyboard.append([InlineKeyboardButton(
             text,
