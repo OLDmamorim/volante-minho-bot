@@ -398,34 +398,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute('SELECT state_data FROM temp_states WHERE user_id = ?', (admin_id,))
         row = cursor.fetchone()
         
-        # Se não está em nenhum fluxo ativo, mostrar informações do dia
-        has_active_flow = (
-            row is not None or
-            context.user_data.get('selecting_vacation_start') or
-            context.user_data.get('selecting_vacation_end') or
-            context.user_data.get('request_type')
-        )
+        # Verificar se dia está ocupado ou bloqueado
+        cursor.execute('''
+            SELECT period, reason, blocked_by FROM blocked_dates
+            WHERE start_date = ?
+        ''', (date_str,))
         
-        if not has_active_flow:
-            # Consulta de informação do dia
-            # Verificar bloqueios
-            cursor.execute('''
-                SELECT period, reason, blocked_by FROM blocked_dates
-                WHERE start_date = ?
-            ''', (date_str,))
-            
-            blocked = cursor.fetchone()
-            
-            # Verificar pedidos aprovados
-            cursor.execute('''
-                SELECT r.*, u.shop_name 
-                FROM requests r
-                JOIN users u ON r.shop_telegram_id = u.telegram_id
-                WHERE r.start_date = ? AND r.status = 'Aprovado'
-                ORDER BY r.period
-            ''', (date_str,))
-            
-            requests = cursor.fetchall()
+        blocked = cursor.fetchone()
+        
+        cursor.execute('''
+            SELECT r.*, u.shop_name 
+            FROM requests r
+            JOIN users u ON r.shop_telegram_id = u.telegram_id
+            WHERE r.start_date = ? AND r.status = 'Aprovado'
+            ORDER BY r.period
+        ''', (date_str,))
+        
+        requests = cursor.fetchall()
+        
+        # Se dia está ocupado/bloqueado E não está em fluxo de bloqueio, mostrar info
+        is_blocking_flow = row is not None
+        is_occupied = blocked is not None or len(requests) > 0
+        
+        if is_occupied and not is_blocking_flow:
+            # Mostrar informação do dia ocupado
             conn.close()
             
             # Construir mensagem
