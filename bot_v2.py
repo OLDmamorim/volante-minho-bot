@@ -29,6 +29,7 @@ from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
 from init_admin import ensure_hugo_admin
 from delete_user import apagar_user_command
+from edit_user import editar_user_command, handle_edit_user_callback
 from admin_management import adicionar_admin_command, handle_promote_admin
 from error_handler import error_handler
 from health_check import start_health_check_server, update_bot_status
@@ -281,6 +282,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("promote_admin_"):
         user_id_to_promote = int(data.replace("promote_admin_", ""))
         await handle_promote_admin(query, user_id_to_promote)
+        return
+    
+    # Editar utilizador
+    if data.startswith("edit_user_"):
+        user_id_to_edit = int(data.replace("edit_user_", ""))
+        user_id_to_edit_result = await handle_edit_user_callback(query, user_id_to_edit)
+        # Guardar no context para processar o novo nome
+        context.user_data['editing_user_id'] = user_id_to_edit_result
         return
     
     # Apagar utilizador
@@ -1030,6 +1039,32 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await menu_command(update, context)
         return
     
+    # Editar nome de utilizador
+    if context.user_data.get('editing_user_id'):
+        user_id_to_edit = context.user_data['editing_user_id']
+        new_name = text.strip()
+        
+        if not new_name:
+            await update.message.reply_text("❌ Nome não pode estar vazio. Tente novamente.")
+            return
+        
+        # Atualizar nome na BD
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET shop_name = ? WHERE telegram_id = ?', (new_name, user_id_to_edit))
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"✅ **Nome atualizado com sucesso!**\n\n"
+            f"🏬 Novo nome: **{new_name}**",
+            parse_mode='Markdown'
+        )
+        
+        # Limpar context
+        context.user_data.pop('editing_user_id', None)
+        return
+    
     # Motivo de bloqueio - LER DA BD
     admin_id = update.effective_user.id
     conn = get_db()
@@ -1770,6 +1805,7 @@ async def lojas_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         text += f"🏬 **{safe_shop_name}**{admin_badge}\n"
         text += f"   👤 @{safe_username}\n"
+        text += f"   🆔 User ID: `{telegram_id}`\n"
         text += f"   📅 Registado: {date_str}\n"
         text += f"   📋 Pedidos: {total_pedidos}\n\n"
     
@@ -1859,6 +1895,7 @@ async def setup_bot_commands(app: Application):
         BotCommand("gerir_pedidos", "Gerir pedidos aprovados (admin)"),
         BotCommand("exportar_estatisticas", "Exportar estatísticas Excel (admin)"),
         BotCommand("adicionar_admin", "Adicionar administrador (super-admin)"),
+        BotCommand("editar_user", "Editar nome de utilizador (admin)"),
         BotCommand("apagar_user", "Apagar utilizador/loja (admin)"),
         BotCommand("menu", "Voltar ao menu principal"),
         BotCommand("help", "Mostrar ajuda"),
@@ -1926,6 +1963,7 @@ def main():
     app.add_handler(CommandHandler('exportar_estatisticas', exportar_estatisticas_command))
     app.add_handler(CommandHandler('apagar_user', apagar_user_command))
     app.add_handler(CommandHandler('adicionar_admin', adicionar_admin_command))
+    app.add_handler(CommandHandler('editar_user', editar_user_command))
     app.add_handler(CommandHandler('menu', menu_command))
     app.add_handler(CommandHandler('help', help_command))
     app.add_handler(CallbackQueryHandler(callback_handler))
