@@ -426,11 +426,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         requests = cursor.fetchall()
         
-        # Se dia está ocupado/bloqueado E não está em fluxo de bloqueio, mostrar info
+        # Verificar se dia está TOTALMENTE ocupado (ambos os períodos)
         is_blocking_flow = row is not None
-        is_occupied = blocked is not None or len(requests) > 0
         
-        if is_occupied and not is_blocking_flow:
+        # Verificar quais períodos estão ocupados
+        occupied_periods = set()
+        
+        if blocked:
+            if blocked['period'] == 'Todo o dia':
+                occupied_periods.add('Manhã')
+                occupied_periods.add('Tarde')
+            else:
+                occupied_periods.add(blocked['period'])
+        
+        for req in requests:
+            if req['period'] == 'Todo o dia':
+                occupied_periods.add('Manhã')
+                occupied_periods.add('Tarde')
+            else:
+                occupied_periods.add(req['period'])
+        
+        # Só mostrar info se dia está TOTALMENTE ocupado OU se está em fluxo de bloqueio
+        is_fully_occupied = 'Manhã' in occupied_periods and 'Tarde' in occupied_periods
+        
+        if is_fully_occupied and not is_blocking_flow:
             # Mostrar informação do dia ocupado
             try:
                 conn.close()
