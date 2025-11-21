@@ -28,6 +28,7 @@ from dashboard_sync import setup_dashboard_sync
 from export_stats import generate_stats_excel
 from export_command import exportar_estatisticas_command
 from init_admin import ensure_hugo_admin
+from telegram.helpers import escape_markdown
 from delete_user import apagar_user_command
 from edit_user import editar_user_command, handle_edit_user_callback
 from admin_management import adicionar_admin_command, handle_promote_admin
@@ -451,7 +452,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         msg += f"   Tipo: {req['request_type']}\n"
                         msg += f"   Período: {req['period']}\n"
                         if req['observations']:
-                            msg += f"   Obs: {req['observations']}\n"
+                            # Escapar caracteres especiais Markdown
+                            obs_escaped = escape_markdown(req['observations'], version=2)
+                            msg += f"   Obs: {obs_escaped}\n"
                         msg += "\n"
                 
                 if not blocked and not requests:
