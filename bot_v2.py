@@ -592,6 +592,46 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 status = get_day_status(year, month, day)
                 logger.info(f"🔍 DEBUG: Status do dia: {status}")
                 
+                # Buscar informações dos pedidos/bloqueios existentes
+                conn_check = get_db()
+                cursor_check = conn_check.cursor()
+                
+                # Verificar bloqueios
+                cursor_check.execute('''
+                    SELECT period, reason FROM blocked_dates
+                    WHERE start_date = ?
+                ''', (date_str,))
+                blocked_info = cursor_check.fetchone()
+                
+                # Verificar pedidos aprovados
+                cursor_check.execute('''
+                    SELECT r.*, u.shop_name 
+                    FROM requests r
+                    JOIN users u ON r.shop_telegram_id = u.telegram_id
+                    WHERE r.start_date = ? AND r.status = 'Aprovado'
+                    ORDER BY r.period
+                ''', (date_str,))
+                requests_info = cursor_check.fetchall()
+                conn_check.close()
+                
+                # Construir mensagem com informações dos períodos ocupados
+                occupied_info = ""
+                
+                if blocked_info:
+                    period_emoji = "🌅" if blocked_info['period'] == "Manhã" else ("🌆" if blocked_info['period'] == "Tarde" else "📆")
+                    occupied_info += f"🔴 **Ocupado:**\n{period_emoji} {blocked_info['period']} - BLOQUEADO"
+                    if blocked_info['reason']:
+                        occupied_info += f" ({blocked_info['reason']})"
+                    occupied_info += "\n\n"
+                
+                if requests_info:
+                    if not occupied_info:
+                        occupied_info = "🔴 **Ocupado:**\n"
+                    for req in requests_info:
+                        period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
+                        occupied_info += f"{period_emoji} {req['period']} - {req['shop_name']} ({req['request_type']})\n"
+                    occupied_info += "\n"
+                
                 # Construir teclado baseado na disponibilidade
                 keyboard = []
                 
@@ -621,10 +661,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
                 logger.info(f"🔍 DEBUG: Enviando mensagem com {len(keyboard)} opções de período")
+                
+                # Construir mensagem final
+                final_message = f"📝 Tipo: **{context.user_data.get('request_type')}**\n"
+                final_message += f"📅 Data: **{date_pt}**\n\n"
+                
+                if occupied_info:
+                    final_message += occupied_info
+                    final_message += "🟢 **Selecione o período livre:**"
+                else:
+                    final_message += "Selecione o período:"
+                
                 await query.edit_message_text(
-                    f"📝 Tipo: **{context.user_data.get('request_type')}**\n"
-                    f"📅 Data: **{date_pt}**\n\n"
-                    f"Selecione o período:",
+                    final_message,
                     reply_markup=reply_markup,
                     parse_mode='Markdown'
                 )
