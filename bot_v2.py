@@ -630,6 +630,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     for req in requests_info:
                         period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
                         occupied_info += f"{period_emoji} {req['period']} - {req['shop_name']} ({req['request_type']})\n"
+                        if req['observations']:
+                            obs_escaped = escape_markdown(req['observations'], version=2)
+                            occupied_info += f"   📝 {obs_escaped}\n"
                     occupied_info += "\n"
                 
                 # Construir teclado baseado na disponibilidade
