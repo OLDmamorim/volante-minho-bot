@@ -1256,16 +1256,30 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             current_date = start_date
             created_count = 0
             
-            while current_date <= end_date:
-                date_str = current_date.strftime('%Y-%m-%d')
-                
-                cursor.execute('''
-                    INSERT INTO requests (shop_telegram_id, request_type, start_date, period, observations, status)
-                    VALUES (?, ?, ?, ?, ?, 'Pendente')
-                ''', (user_id, request_type, date_str, 'Todo o dia', observations))
-                
-                created_count += 1
-                current_date += timedelta(days=1)
+            try:
+                while current_date <= end_date:
+                    date_str = current_date.strftime('%Y-%m-%d')
+                    
+                    logger.info(f"🔍 DEBUG FÉRIAS: Inserindo pedido - user_id={user_id}, type={request_type}, date={date_str}, period='Todo o dia', obs='{observations}'")
+                    
+                    cursor.execute('''
+                        INSERT INTO requests (shop_telegram_id, request_type, start_date, end_date, period, observations, status)
+                        VALUES (?, ?, ?, ?, ?, ?, 'Pendente')
+                    ''', (user_id, request_type, date_str, date_str, 'Todo o dia', observations))
+                    
+                    created_count += 1
+                    current_date += timedelta(days=1)
+                    
+                logger.info(f"✅ DEBUG FÉRIAS: {created_count} pedidos criados com sucesso!")
+            except Exception as insert_error:
+                logger.error(f"❌ ERRO ao inserir pedido de férias: {insert_error}", exc_info=True)
+                conn.rollback()
+                conn.close()
+                await update.message.reply_text(
+                    f"❌ Erro ao criar pedido de férias: {str(insert_error)}\n\nPor favor, tente novamente ou contacte o administrador."
+                )
+                context.user_data.clear()
+                return
             
             conn.commit()
             conn.close()
