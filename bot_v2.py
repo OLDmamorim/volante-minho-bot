@@ -1276,7 +1276,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     created_count += 1
                     current_date += timedelta(days=1)
                     
-                logger.info(f"✅ Pedidos de férias criados: {created_count} dias")
+                logger.info(f"✅ Pedidos de férias inseridos: {created_count} dias")
             except Exception as insert_error:
                 logger.error(f"❌ ERRO ao inserir pedido de férias: {insert_error}", exc_info=True)
                 conn.rollback()
@@ -1287,8 +1287,36 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.clear()
                 return
             
-            conn.commit()
-            conn.close()
+            # Fazer commit
+            try:
+                logger.info("🔄 Fazendo commit dos pedidos de férias...")
+                conn.commit()
+                logger.info("✅ Commit realizado com sucesso!")
+                
+                # Verificar se foram realmente salvos
+                cursor_verify = conn.cursor()
+                cursor_verify.execute('''
+                    SELECT COUNT(*) FROM requests 
+                    WHERE shop_telegram_id = ? AND request_type = 'Férias' AND status = 'Pendente'
+                    AND start_date >= ? AND start_date <= ?
+                ''', (user_id, context.user_data['vacation_start'], context.user_data['vacation_end']))
+                saved_count = cursor_verify.fetchone()[0]
+                logger.info(f"🔍 Verificação: {saved_count} pedidos encontrados na base de dados")
+                
+                if saved_count != created_count:
+                    logger.error(f"❌ ERRO: Criados {created_count} mas apenas {saved_count} salvos!")
+                    
+            except Exception as commit_error:
+                logger.error(f"❌ ERRO ao fazer commit: {commit_error}", exc_info=True)
+                conn.rollback()
+                conn.close()
+                await update.message.reply_text(
+                    f"❌ Erro ao salvar pedidos de férias: {str(commit_error)}\n\nPor favor, tente novamente."
+                )
+                context.user_data.clear()
+                return
+            finally:
+                conn.close()
             
             # Notificar admins
             for admin_id in ADMIN_IDS:
@@ -1301,8 +1329,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                              f"📊 Total: {created_count} dias",
                         parse_mode='Markdown'
                     )
-                except:
-                    pass
+                    logger.info(f"✅ Notificação de férias enviada para admin {admin_id}")
+                except Exception as notify_error:
+                    logger.warning(f"⚠️ Não foi possível notificar admin {admin_id}: {notify_error}")
+                    continue
             
             await update.message.reply_text(
                 f"✅ **Pedido de Férias Criado!**\n\n"
