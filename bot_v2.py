@@ -1270,13 +1270,20 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.info(f"  - observations: '{observations}' (type: {type(observations)})")
                     logger.info(f"  - status: 'Pendente'")
                     
-                    # Ordem das colunas conforme CREATE TABLE:
-                    # shop_telegram_id, request_type, start_date, end_date, period, status, rejection_reason, observations
+                    # Usar parâmetros nomeados para evitar confusão
                     sql = '''
                         INSERT INTO requests (shop_telegram_id, request_type, start_date, end_date, period, status, observations)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        VALUES (:user_id, :request_type, :start_date, :end_date, :period, :status, :observations)
                     '''
-                    params = (user_id, request_type, date_str, date_str, period_value, 'Pendente', observations)
+                    params = {
+                        'user_id': user_id,
+                        'request_type': request_type,
+                        'start_date': date_str,
+                        'end_date': date_str,
+                        'period': period_value,
+                        'status': 'Pendente',
+                        'observations': observations
+                    }
                     
                     logger.info(f"🔍 SQL: {sql}")
                     logger.info(f"🔍 PARAMS: {params}")
