@@ -1259,41 +1259,24 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 while current_date <= end_date:
                     date_str = current_date.strftime('%Y-%m-%d')
-                    period_value = 'Todo o dia'
                     
-                    logger.info(f"🔍 DEBUG FÉRIAS: Inserindo pedido")
-                    logger.info(f"  - user_id: {user_id} (type: {type(user_id)})")
-                    logger.info(f"  - request_type: {request_type} (type: {type(request_type)})")
-                    logger.info(f"  - start_date: {date_str} (type: {type(date_str)})")
-                    logger.info(f"  - end_date: {date_str} (type: {type(date_str)})")
-                    logger.info(f"  - period: '{period_value}' (type: {type(period_value)}, len: {len(period_value)})")
-                    logger.info(f"  - observations: '{observations}' (type: {type(observations)})")
-                    logger.info(f"  - status: 'Pendente'")
-                    
-                    # Usar parâmetros nomeados para evitar confusão
-                    sql = '''
+                    cursor.execute('''
                         INSERT INTO requests (shop_telegram_id, request_type, start_date, end_date, period, status, observations)
                         VALUES (:user_id, :request_type, :start_date, :end_date, :period, :status, :observations)
-                    '''
-                    params = {
+                    ''', {
                         'user_id': user_id,
                         'request_type': request_type,
                         'start_date': date_str,
                         'end_date': date_str,
-                        'period': period_value,
+                        'period': 'Todo o dia',
                         'status': 'Pendente',
                         'observations': observations
-                    }
-                    
-                    logger.info(f"🔍 SQL: {sql}")
-                    logger.info(f"🔍 PARAMS: {params}")
-                    
-                    cursor.execute(sql, params)
+                    })
                     
                     created_count += 1
                     current_date += timedelta(days=1)
                     
-                logger.info(f"✅ DEBUG FÉRIAS: {created_count} pedidos criados com sucesso!")
+                logger.info(f"✅ Pedidos de férias criados: {created_count} dias")
             except Exception as insert_error:
                 logger.error(f"❌ ERRO ao inserir pedido de férias: {insert_error}", exc_info=True)
                 conn.rollback()
