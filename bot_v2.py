@@ -1761,6 +1761,9 @@ async def agenda_semana_command(update: Update, context: ContextTypes.DEFAULT_TY
                 for req in requests:
                     period_emoji = "🌅" if req['period'] == "Manhã" else ("🌆" if req['period'] == "Tarde" else "📆")
                     text += f"{period_emoji} {req['shop_name']} - {req['request_type']} ({req['period']})\n"
+                    if req['observations']:
+                        obs_escaped = escape_markdown(req['observations'], version=2)
+                        text += f"   📝 Obs: {obs_escaped}\n"
             else:
                 text += "🟢 Sem pedidos aprovados\n"
         

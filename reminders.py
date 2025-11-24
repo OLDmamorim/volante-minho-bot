@@ -58,7 +58,8 @@ def get_today_schedule():
                 r.request_type,
                 r.period,
                 r.start_date,
-                r.end_date
+                r.end_date,
+                r.observations
             FROM requests r
             LEFT JOIN users u ON r.shop_telegram_id = u.telegram_id
             WHERE r.status = 'Aprovado'
@@ -177,23 +178,29 @@ async def send_daily_schedule(application: Application):
             
             if manha:
                 message += "🌅 **Manhã:**\n"
-                for shop, req_type, period, start, end in manha:
+                for shop, req_type, period, start, end, observations in manha:
                     message += f"   • {shop or 'Loja'} - {req_type}\n"
+                    if observations:
+                        message += f"     📝 {observations}\n"
                 message += "\n"
             
             if tarde:
                 message += "🌆 **Tarde:**\n"
-                for shop, req_type, period, start, end in tarde:
+                for shop, req_type, period, start, end, observations in tarde:
                     message += f"   • {shop or 'Loja'} - {req_type}\n"
+                    if observations:
+                        message += f"     📝 {observations}\n"
                 message += "\n"
             
             if todo_dia:
                 message += "📅 **Todo o dia:**\n"
-                for shop, req_type, period, start, end in todo_dia:
+                for shop, req_type, period, start, end, observations in todo_dia:
                     if end and end != start:
                         message += f"   • {shop or 'Loja'} - {req_type} (até {end})\n"
                     else:
                         message += f"   • {shop or 'Loja'} - {req_type}\n"
+                    if observations:
+                        message += f"     📝 {observations}\n"
                 message += "\n"
             
             pass  # Total removido conforme solicitado
