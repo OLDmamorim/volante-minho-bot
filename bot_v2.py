@@ -666,7 +666,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"🔍 DEBUG: Enviando mensagem com {len(keyboard)} opções de período")
                 
                 # Construir mensagem final
-                final_message = f"📝 Tipo: **{context.user_data.get('request_type')}**\n"
+                request_type = context.user_data.get('request_type')
+                
+                if request_type:
+                    final_message = f"📝 Tipo: **{request_type}**\n"
+                else:
+                    final_message = "📅 **Visualização do Calendário**\n"
+                
                 final_message += f"📅 Data: **{date_pt}**\n\n"
                 
                 if occupied_info:
