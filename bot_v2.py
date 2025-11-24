@@ -1334,14 +1334,19 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     logger.warning(f"⚠️ Não foi possível notificar admin {admin_id}: {notify_error}")
                     continue
             
-            await update.message.reply_text(
-                f"✅ **Pedido de Férias Criado!**\n\n"
-                f"📝 Tipo: {request_type}\n"
-                f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
-                f"📊 Total: {created_count} dias\n\n"
-                f"Aguarde aprovação dos gestores.",
-                parse_mode='Markdown'
-            )
+            logger.info("📤 Enviando mensagem de confirmação ao utilizador...")
+            try:
+                await update.message.reply_text(
+                    f"✅ **Pedido de Férias Criado!**\n\n"
+                    f"📝 Tipo: {request_type}\n"
+                    f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
+                    f"📊 Total: {created_count} dias\n\n"
+                    f"Aguarde aprovação dos gestores.",
+                    parse_mode='Markdown'
+                )
+                logger.info("✅ Mensagem de confirmação enviada com sucesso!")
+            except Exception as confirm_error:
+                logger.error(f"❌ ERRO ao enviar mensagem de confirmação: {confirm_error}", exc_info=True)
             
             context.user_data.clear()
             return
