@@ -1316,16 +1316,38 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             finally:
                 conn.close()
             
-            # Notificar admins
+            # Notificar admins com botões de aprovação/rejeição
             for admin_id in ADMIN_IDS:
                 try:
+                    # Obter o ID do primeiro pedido para usar nos botões
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT id FROM requests WHERE shop_telegram_id = ? AND request_type = ? AND status = ? ORDER BY id DESC LIMIT 1', 
+                                  (user_id, request_type, 'Pendente'))
+                    first_request = cursor.fetchone()
+                    conn.close()
+                    
+                    if first_request:
+                        request_id = first_request['id']
+                        keyboard = [
+                            [
+                                InlineKeyboardButton("✅ Aprovar", callback_data=f"aprovar_{request_id}"),
+                                InlineKeyboardButton("❌ Rejeitar", callback_data=f"rejeitar_{request_id}")
+                            ],
+                            [InlineKeyboardButton("👁️ Ver Detalhes", callback_data=f"ver_pedido_{request_id}")]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                    else:
+                        reply_markup = None
+                    
                     await context.bot.send_message(
                         chat_id=admin_id,
                         text=f"🔔 **Novos Pedidos de Férias!**\n\n"
                              f"📝 Tipo: {request_type}\n"
                              f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
                              f"📊 Total: {created_count} dias",
-                        parse_mode='Markdown'
+                        parse_mode='Markdown',
+                        reply_markup=reply_markup
                     )
                     logger.info(f"✅ Notificação de férias enviada para admin {admin_id}")
                 except Exception as notify_error:
