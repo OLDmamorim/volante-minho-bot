@@ -1340,13 +1340,22 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         reply_markup = None
                     
+                    # Obter nome da loja
+                    conn_shop = get_db()
+                    cursor_shop = conn_shop.cursor()
+                    cursor_shop.execute("SELECT shop_name FROM users WHERE telegram_id = ?", (user_id,))
+                    shop_user = cursor_shop.fetchone()
+                    shop_name = shop_user["shop_name"] if shop_user else "Loja não encontrada"
+                    conn_shop.close()
+
                     await context.bot.send_message(
                         chat_id=admin_id,
                         text=f"🔔 **Novos Pedidos de Férias!**\n\n"
+                             f"🏢 Loja: {shop_name}\n"
                              f"📝 Tipo: {request_type}\n"
-                             f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
+                             f"📅 Período: {context.user_data["vacation_start_pt"]} a {context.user_data["vacation_end_pt"]}\n"
                              f"📊 Total: {created_count} dias",
-                        parse_mode='Markdown',
+                        parse_mode=\'Markdown\',
                         reply_markup=reply_markup
                     )
                     logger.info(f"✅ Notificação de férias enviada para admin {admin_id}")
