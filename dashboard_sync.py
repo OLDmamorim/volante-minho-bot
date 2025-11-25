@@ -9,7 +9,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-async def sync_dashboard_data():
+async def sync_dashboard_data(context=None):
     """Sincronizar dados do bot para o dashboard"""
     try:
         logger.info("🔄 Iniciando sincronização com dashboard...")

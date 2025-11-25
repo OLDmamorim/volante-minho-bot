@@ -1173,8 +1173,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"🔍 DEBUG: Motivo processado: '{reason}'")
             
             # Calcular todos os dias do período
-            from datetime import datetime, timedelta
-            
             start_date = datetime.strptime(block_start_date, '%Y-%m-%d')
             end_date = datetime.strptime(block_end_date, '%Y-%m-%d')
             
