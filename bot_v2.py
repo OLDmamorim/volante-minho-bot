@@ -805,12 +805,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
         
-        # Atualizar pedido
-        cursor.execute('''
-            UPDATE requests 
-            SET status = 'Aprovado', processed_at = ?, processed_by = ?
-            WHERE id = ?
-        ''', (dt.now(), admin_id, request_id))
+        # Se for Férias, aprovar todos os pedidos do mesmo período
+        if req['request_type'] == 'Férias':
+            cursor.execute('''
+                UPDATE requests 
+                SET status = 'Aprovado', processed_at = ?, processed_by = ?
+                WHERE shop_telegram_id = ? AND request_type = 'Férias' AND start_date >= ? AND end_date <= ?
+            ''', (dt.now(), admin_id, req['shop_telegram_id'], req['start_date'], req['end_date']))
+        else:
+            # Atualizar pedido único
+            cursor.execute('''
+                UPDATE requests 
+                SET status = 'Aprovado', processed_at = ?, processed_by = ?
+                WHERE id = ?
+            ''', (dt.now(), admin_id, request_id))
         
         # Buscar info do pedido
         cursor.execute('''
