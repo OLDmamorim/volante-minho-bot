@@ -1361,9 +1361,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         text=f"🔔 **Novos Pedidos de Férias!**\n\n"
                              f"🏢 Loja: {shop_name}\n"
                              f"📝 Tipo: {request_type}\n"
-                             f"📅 Período: {context.user_data["vacation_start_pt"]} a {context.user_data["vacation_end_pt"]}\n"
+                             f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
                              f"📊 Total: {created_count} dias",
-                        parse_mode=\'Markdown\',
+                        parse_mode='Markdown',
                         reply_markup=reply_markup
                     )
                     logger.info(f"✅ Notificação de férias enviada para admin {admin_id}")
