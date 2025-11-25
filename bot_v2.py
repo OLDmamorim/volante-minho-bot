@@ -805,22 +805,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db()
         cursor = conn.cursor()
         
-        # Se for Férias, aprovar todos os pedidos do mesmo período
-        if req['request_type'] == 'Férias':
-            cursor.execute('''
-                UPDATE requests 
-                SET status = 'Aprovado', processed_at = ?, processed_by = ?
-                WHERE shop_telegram_id = ? AND request_type = 'Férias' AND start_date >= ? AND end_date <= ?
-            ''', (dt.now(), admin_id, req['shop_telegram_id'], req['start_date'], req['end_date']))
-        else:
-            # Atualizar pedido único
-            cursor.execute('''
-                UPDATE requests 
-                SET status = 'Aprovado', processed_at = ?, processed_by = ?
-                WHERE id = ?
-            ''', (dt.now(), admin_id, request_id))
-        
-        # Buscar info do pedido
+        # Buscar info do pedido primeiro
         cursor.execute('''
             SELECT r.*, u.shop_name 
             FROM requests r
@@ -828,6 +813,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             WHERE r.id = ?
         ''', (request_id,))
         req = cursor.fetchone()
+
+        # Se for Férias, aprovar todos os pedidos do mesmo período
+        if req and req['request_type'] == 'Férias':
+            cursor.execute('''
+                UPDATE requests 
+                SET status = 'Aprovado', processed_at = ?, processed_by = ?
+                WHERE shop_telegram_id = ? AND request_type = 'Férias' AND start_date >= ? AND end_date <= ?
+            ''', (dt.now(), admin_id, req['shop_telegram_id'], req['start_date'], req['end_date']))
+        elif req:
+            # Atualizar pedido único
+            cursor.execute('''
+                UPDATE requests 
+                SET status = 'Aprovado', processed_at = ?, processed_by = ?
+                WHERE id = ?
+            ''', (dt.now(), admin_id, request_id))
         
         conn.commit()
         
@@ -1258,31 +1258,27 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn = get_db()
             cursor = conn.cursor()
             
-            # Criar um pedido para cada dia
-            current_date = start_date
-            created_count = 0
+            # Criar um único pedido para todo o período de férias
+            start_date_str = start_date.strftime('%Y-%m-%d')
+            end_date_str = end_date.strftime('%Y-%m-%d')
+            total_days = (end_date - start_date).days + 1
             
             try:
-                while current_date <= end_date:
-                    date_str = current_date.strftime('%Y-%m-%d')
-                    
-                    cursor.execute('''
-                        INSERT INTO requests (shop_telegram_id, request_type, start_date, end_date, period, status, observations)
-                        VALUES (:user_id, :request_type, :start_date, :end_date, :period, :status, :observations)
-                    ''', {
-                        'user_id': user_id,
-                        'request_type': request_type,
-                        'start_date': date_str,
-                        'end_date': date_str,
-                        'period': 'Todo o dia',
-                        'status': 'Pendente',
-                        'observations': observations
-                    })
-                    
-                    created_count += 1
-                    current_date += timedelta(days=1)
-                    
-                logger.info(f"✅ Pedidos de férias inseridos: {created_count} dias")
+                cursor.execute('''
+                    INSERT INTO requests (shop_telegram_id, request_type, start_date, end_date, period, status, observations)
+                    VALUES (:user_id, :request_type, :start_date, :end_date, :period, :status, :observations)
+                ''', {
+                    'user_id': user_id,
+                    'request_type': request_type,
+                    'start_date': start_date_str,
+                    'end_date': end_date_str,
+                    'period': 'Todo o dia',
+                    'status': 'Pendente',
+                    'observations': observations
+                })
+                
+                created_count = 1
+                logger.info(f"✅ Pedido de férias criado para {total_days} dias")
             except Exception as insert_error:
                 logger.error(f"❌ ERRO ao inserir pedido de férias: {insert_error}", exc_info=True)
                 conn.rollback()
@@ -1299,15 +1295,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 conn.commit()
                 logger.info("✅ Commit realizado com sucesso!")
                 
-                # Verificar se foram realmente salvos
+                # Verificar se foi realmente salvo
                 cursor_verify = conn.cursor()
                 cursor_verify.execute('''
                     SELECT COUNT(*) FROM requests 
                     WHERE shop_telegram_id = ? AND request_type = 'Férias' AND status = 'Pendente'
-                    AND start_date >= ? AND start_date <= ?
+                    AND start_date = ? AND end_date = ?
                 ''', (user_id, context.user_data['vacation_start'], context.user_data['vacation_end']))
                 saved_count = cursor_verify.fetchone()[0]
-                logger.info(f"🔍 Verificação: {saved_count} pedidos encontrados na base de dados")
+                logger.info(f"🔍 Verificação: {saved_count} pedido(s) encontrado(s) na base de dados")
                 
                 if saved_count != created_count:
                     logger.error(f"❌ ERRO: Criados {created_count} mas apenas {saved_count} salvos!")
