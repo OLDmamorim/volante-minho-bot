@@ -1356,12 +1356,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     shop_name = shop_user["shop_name"] if shop_user else "Loja não encontrada"
                     conn_shop.close()
 
+                    vacation_start = context.user_data.get('vacation_start_pt', '')
+                    vacation_end = context.user_data.get('vacation_end_pt', '')
+                    
                     await context.bot.send_message(
                         chat_id=admin_id,
                         text=f"🔔 **Novos Pedidos de Férias!**\n\n"
                              f"🏢 Loja: {shop_name}\n"
                              f"📝 Tipo: {request_type}\n"
-                             f"📅 Período: {context.user_data['vacation_start_pt']} a {context.user_data['vacation_end_pt']}\n"
+                             f"📅 Período: {vacation_start} a {vacation_end}\n"
                              f"📊 Total: {created_count} dias",
                         parse_mode='Markdown',
                         reply_markup=reply_markup
