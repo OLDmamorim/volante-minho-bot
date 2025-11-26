@@ -470,9 +470,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         msg += f"{period_emoji} **{req['shop_name']}**\n"
                         msg += f"   Tipo: {req['request_type']}\n"
                         msg += f"   Período: {req['period']}\n"
-                        if req['observations']:
+                        # Mostrar observações apenas para admins
+                        if req["observations"] and query.from_user.id in ADMIN_IDS:
                             # Escapar caracteres especiais Markdown
-                            obs_escaped = escape_markdown(req['observations'], version=2)
+                            obs_escaped = escape_markdown(req["observations"], version=2)
                             msg += f"   Obs: {obs_escaped}\n"
                         msg += "\n"
                 
