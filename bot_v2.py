@@ -893,38 +893,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
         
-        # Atualizar mensagens dos outros admins
-        import json
-        logger.info(f"Tentando atualizar mensagens dos outros admins para pedido #{request_id}")
-        admin_msg_ids = req['admin_message_ids'] if 'admin_message_ids' in req.keys() else None
-        if admin_msg_ids:
-            try:
-                admin_messages = json.loads(admin_msg_ids)
-                admin_name = query.from_user.first_name or "Admin"
-                logger.info(f"admin_message_ids encontrado: {admin_messages}, admin que aprovou: {admin_id}")
-                
-                for other_admin_id, message_id in admin_messages.items():
-                    other_admin_id = int(other_admin_id)
-                    if other_admin_id != admin_id:  # Não atualizar a mensagem do admin que aprovou
-                        try:
-                            logger.info(f"Atualizando mensagem {message_id} para admin {other_admin_id}")
-                            await context.bot.edit_message_text(
-                                chat_id=other_admin_id,
-                                message_id=message_id,
-                                text=f"✅ **Pedido #{request_id} Aprovado por {admin_name}**\n\n"
-                                     f"🏬 Loja: {req['shop_name']}\n"
-                                     f"📝 Tipo: {req['request_type']}\n"
-                                     f"📅 Data: {req['start_date']}\n"
-                                     f"🕐 Período: {req['period']}",
-                                parse_mode='Markdown'
-                            )
-                            logger.info(f"Mensagem {message_id} atualizada com sucesso")
-                        except Exception as e:
-                            logger.error(f"Erro ao atualizar mensagem {message_id}: {e}")
-            except Exception as e:
-                logger.error(f"Erro ao processar admin_message_ids: {e}")
-        else:
-            logger.warning(f"Pedido #{request_id} não tem admin_message_ids")
+        # Notificar outros admins
+        admin_name = query.from_user.first_name or "Admin"
+        shop_name = req.get('shop_name', 'Loja')
+        request_type = req.get('request_type', 'Pedido')
+        start_date = req.get('start_date', 'N/A')
+        period = req.get('period', 'N/A')
+        
+        for other_admin_id in ADMIN_IDS:
+            if other_admin_id != admin_id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=other_admin_id,
+                        text=f"✅ **Pedido #{request_id} Aprovado por {admin_name}**\n\n"
+                             f"🏬 Loja: {shop_name}\n"
+                             f"📝 Tipo: {request_type}\n"
+                             f"📅 Data: {start_date}\n"
+                             f"🕐 Período: {period}",
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.error(f"Erro ao notificar admin {other_admin_id}: {e}")
         
         return
     
